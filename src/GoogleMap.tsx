@@ -265,10 +265,12 @@ export default function MapWithStreetView() {
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
 
-  function scoreFromKm(km: number) {
-    const s = Math.round(5000 * Math.exp(-km / 2000));
-    return Math.max(0, Math.min(5000, s));
-  }
+function scoreFromKm(km: number) {
+  const scaleKm = 150; // plus petit => la chute est plus rapide
+  const s = Math.round(5000 * Math.exp(-km / scaleKm));
+  return Math.max(0, Math.min(5000, s));
+}
+
 
   // ---- sync ref <- state ----
   useEffect(() => { validatedRef.current = validated; }, [validated]);
