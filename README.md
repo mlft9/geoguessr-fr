@@ -22,12 +22,6 @@ Un score est calculé en fonction de la distance entre la vraie position et la s
 
 ---
 
-## 📸 Aperçu
-
-*(à compléter avec une capture d’écran de ton jeu)*
-
----
-
 ## ⚙️ Stack technique
 
 - [React + Vite](https://vitejs.dev/) ⚡
