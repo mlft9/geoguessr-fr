@@ -5,19 +5,82 @@
   --text: #e6e8eb;
 }
 
-html, body, #root { height: 100%; margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans"; }
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    "Helvetica Neue", Arial, "Noto Sans";
+}
 
-.app-wrap { height: 100vh; padding: 12px; box-sizing: border-box; }
+.app-wrap {
+  height: 100vh;
+  padding: 12px;
+  box-sizing: border-box;
+  background: var(--bg);
+}
 
-.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
 
-.stage { position: relative; height: calc(100vh - 24px); } /* 24px = padding top+bottom */
-.pano-fill { position: absolute; inset: 0; z-index: 1; }
-.overlay-map { position: absolute; right: 16px; bottom: 16px; width: 340px; height: 220px; z-index: 2; }
+.fill {
+  width: 100%;
+  height: 100%;
+}
 
-.fill { width: 100%; height: 100%; }
+/* --- Layout principal --- */
+.stage {
+  position: relative;
+  height: calc(100vh - 24px); /* 24px = padding haut+bas de app-wrap */
+}
 
-/* (Optionnel) pour debug visuel temporaire :
-#pano-root { outline: 1px dashed #333; }
-#mini-map  { outline: 1px dashed #444; }
-*/
+.pano-fill {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* --- Mini-carte --- */
+.overlay-map {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  transition: width 0.28s ease, height 0.28s ease, box-shadow 0.28s ease;
+}
+
+.overlay-map.small { width: 340px; height: 220px; }
+.overlay-map.large { width: 540px; height: 360px; }
+
+/* --- Bouton toggle --- */
+.overlay-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 6px 10px;
+  background: rgba(17, 22, 28, 0.9);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  z-index: 3; /* bouton toujours au-dessus de la carte */
+  transition: background 0.2s ease;
+}
+.overlay-toggle:hover {
+  background: rgba(17, 22, 28, 1);
+}
+
+.overlay-map.large.panel {
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}

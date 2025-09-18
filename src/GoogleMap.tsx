@@ -19,18 +19,23 @@ export default function MapWithStreetView() {
   const guessMarkerRef = useRef<google.maps.Marker | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [isLarge, setIsLarge] = useState(false);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string,
     id: "gmaps-sdk",
   });
 
+  // Génère une coordonnée aléatoire dans l’enveloppe FR
   function randomCoords(): google.maps.LatLngLiteral {
-    const lat = FR_BOUNDS.latMin + (FR_BOUNDS.latMax - FR_BOUNDS.latMin) * Math.random();
-    const lng = FR_BOUNDS.lngMin + (FR_BOUNDS.lngMax - FR_BOUNDS.lngMin) * Math.random();
+    const lat =
+      FR_BOUNDS.latMin + (FR_BOUNDS.latMax - FR_BOUNDS.latMin) * Math.random();
+    const lng =
+      FR_BOUNDS.lngMin + (FR_BOUNDS.lngMax - FR_BOUNDS.lngMin) * Math.random();
     return { lat, lng };
   }
 
+  // Reverse geocoding pour obtenir le pays
   function getCountryCode(
     geocoder: google.maps.Geocoder,
     latLng: google.maps.LatLng
@@ -52,6 +57,7 @@ export default function MapWithStreetView() {
     });
   }
 
+  // Trouver un pano FR
   async function findFrenchPanorama(
     sv: google.maps.StreetViewService,
     geocoder: google.maps.Geocoder,
@@ -59,22 +65,24 @@ export default function MapWithStreetView() {
   ): Promise<google.maps.StreetViewLocation | null> {
     for (let i = 0; i < maxAttempts; i++) {
       const seed = randomCoords();
-      const location = await new Promise<google.maps.StreetViewLocation | null>((resolve) => {
-        sv.getPanorama(
-          {
-            location: seed,
-            radius: 1200,
-            preference: google.maps.StreetViewPreference.NEAREST,
-          },
-          (data, status) => {
-            if (status === google.maps.StreetViewStatus.OK && data?.location) {
-              resolve(data.location);
-            } else {
-              resolve(null);
+      const location = await new Promise<google.maps.StreetViewLocation | null>(
+        (resolve) => {
+          sv.getPanorama(
+            {
+              location: seed,
+              radius: 1200,
+              preference: google.maps.StreetViewPreference.NEAREST,
+            },
+            (data, status) => {
+              if (status === google.maps.StreetViewStatus.OK && data?.location) {
+                resolve(data.location);
+              } else {
+                resolve(null);
+              }
             }
-          }
-        );
-      });
+          );
+        }
+      );
 
       if (location?.latLng) {
         const cc = await getCountryCode(geocoder, location.latLng);
@@ -90,7 +98,7 @@ export default function MapWithStreetView() {
     const sv = new google.maps.StreetViewService();
     const geocoder = new google.maps.Geocoder();
 
-    // 1) Mini-carte (centrée France, sans révéler la vraie position)
+    // Initialisation mini-carte (centrée sur la France)
     mapRef.current = new google.maps.Map(mapDivRef.current, {
       center: { lat: 46.6, lng: 2.2 },
       zoom: 5,
@@ -102,7 +110,7 @@ export default function MapWithStreetView() {
       disableDefaultUI: true,
     });
 
-    // Clic mini-carte -> poser/déplacer le marqueur "guess" (bleu)
+    // Clic mini-carte -> guess marker (bleu)
     mapRef.current.addListener("click", (e: google.maps.MapMouseEvent) => {
       if (!e.latLng || !mapRef.current) return;
       if (!guessMarkerRef.current) {
@@ -118,19 +126,17 @@ export default function MapWithStreetView() {
       }
     });
 
-    // 2) Cherche un pano FR puis instancie Street View (pas avant)
+    // Recherche pano FR
     (async () => {
       const loc = await findFrenchPanorama(sv, geocoder);
       const chosen = loc?.latLng;
 
-      // S’il n’y a rien trouvé, on garde l’UI carte mais on affiche un message
       if (!chosen) {
         setLoading(false);
         console.warn("Aucun panorama FR trouvé après plusieurs essais.");
         return;
       }
 
-      // Instancier le pano UNIQUEMENT maintenant -> pas de flash Paris
       panoRef.current = new google.maps.StreetViewPanorama(panoDivRef.current!, {
         position: chosen,
         pov: { heading: 0, pitch: 0 },
@@ -141,7 +147,6 @@ export default function MapWithStreetView() {
         fullscreenControl: false,
       });
 
-      // Marqueur ROUGE = vraie position (debug/gameplay)
       realMarkerRef.current = new google.maps.Marker({
         position: chosen,
         map: mapRef.current!,
@@ -160,14 +165,22 @@ export default function MapWithStreetView() {
     };
   }, [isLoaded]);
 
+  // Force Google Maps à recalculer son viewport au resize
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const center = mapRef.current.getCenter();
+    // @ts-ignore
+    google.maps.event.trigger(mapRef.current, "resize");
+    if (center) mapRef.current.setCenter(center);
+  }, [isLarge]);
+
   if (loadError) return <div>Erreur de chargement Google Maps</div>;
   if (!isLoaded) return <div>Chargement…</div>;
 
   return (
     <div className="stage">
-      {/* Street View plein écran (conteneur) */}
+      {/* Street View plein écran */}
       <div className="pano-fill">
-        {/* On masque visuellement tant que le spawn n'est pas prêt */}
         <div
           ref={panoDivRef}
           className="fill"
@@ -191,8 +204,15 @@ export default function MapWithStreetView() {
         )}
       </div>
 
-      {/* Mini-carte en bas à droite */}
-      <div className="overlay-map panel">
+      {/* Mini-carte avec toggle */}
+      <div className={`overlay-map panel ${isLarge ? "large" : "small"}`}>
+        <button
+          className="overlay-toggle"
+          onClick={() => setIsLarge((v) => !v)}
+          title={isLarge ? "Réduire la mini-carte" : "Agrandir la mini-carte"}
+        >
+          {isLarge ? "Réduire" : "Agrandir"}
+        </button>
         <div ref={mapDivRef} className="fill" />
       </div>
     </div>
