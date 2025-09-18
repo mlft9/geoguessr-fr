@@ -1,111 +1,162 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useJsApiLoader } from "@react-google-maps/api";
 
-const franceBounds = {
-  latMin: 41.3,  // Corse sud
-  latMax: 51.1,  // Nord
-  lngMin: -5.1,  // Bretagne
-  lngMax: 9.6,   // Corse est
+const FR_BOUNDS = {
+  latMin: 41.3,
+  latMax: 51.1,
+  lngMin: -5.1,
+  lngMax: 9.6,
 };
 
 export default function MapWithStreetView() {
   const panoDivRef = useRef<HTMLDivElement | null>(null);
   const mapDivRef = useRef<HTMLDivElement | null>(null);
+
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
+
+  const realMarkerRef = useRef<google.maps.Marker | null>(null);
+  const guessMarkerRef = useRef<google.maps.Marker | null>(null);
+
+  const [loading, setLoading] = useState(true);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string,
     id: "gmaps-sdk",
   });
 
-  // Fonction utilitaire : génère une coordonnée aléatoire en France
-  function randomCoords() {
-    const lat =
-      franceBounds.latMin +
-      (franceBounds.latMax - franceBounds.latMin) * Math.random();
-    const lng =
-      franceBounds.lngMin +
-      (franceBounds.lngMax - franceBounds.lngMin) * Math.random();
+  function randomCoords(): google.maps.LatLngLiteral {
+    const lat = FR_BOUNDS.latMin + (FR_BOUNDS.latMax - FR_BOUNDS.latMin) * Math.random();
+    const lng = FR_BOUNDS.lngMin + (FR_BOUNDS.lngMax - FR_BOUNDS.lngMin) * Math.random();
     return { lat, lng };
   }
 
-  // Trouver un point Street View valide
-  function getRandomStreetView(
-    service: google.maps.StreetViewService,
-    attempt = 0,
-    maxAttempts = 20
-  ): Promise<google.maps.StreetViewLocation> {
-    return new Promise((resolve, reject) => {
-      if (attempt >= maxAttempts) {
-        reject(new Error("Impossible de trouver un point Street View"));
-        return;
-      }
-
-      const coords = randomCoords();
-
-      service.getPanorama(
-        { location: coords, radius: 5000 }, // cherche dans un rayon de 5 km
-        (data, status) => {
-          if (status === google.maps.StreetViewStatus.OK && data?.location) {
-            resolve(data.location);
-          } else {
-            // réessaye
-            resolve(getRandomStreetView(service, attempt + 1, maxAttempts));
+  function getCountryCode(
+    geocoder: google.maps.Geocoder,
+    latLng: google.maps.LatLng
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      geocoder.geocode({ location: latLng }, (results, status) => {
+        if (status === google.maps.GeocoderStatus.OK && results) {
+          for (const r of results) {
+            for (const comp of r.address_components) {
+              if (comp.types.includes("country")) {
+                resolve(comp.short_name ?? null);
+                return;
+              }
+            }
           }
         }
-      );
+        resolve(null);
+      });
     });
+  }
+
+  async function findFrenchPanorama(
+    sv: google.maps.StreetViewService,
+    geocoder: google.maps.Geocoder,
+    maxAttempts = 30
+  ): Promise<google.maps.StreetViewLocation | null> {
+    for (let i = 0; i < maxAttempts; i++) {
+      const seed = randomCoords();
+      const location = await new Promise<google.maps.StreetViewLocation | null>((resolve) => {
+        sv.getPanorama(
+          {
+            location: seed,
+            radius: 1200,
+            preference: google.maps.StreetViewPreference.NEAREST,
+          },
+          (data, status) => {
+            if (status === google.maps.StreetViewStatus.OK && data?.location) {
+              resolve(data.location);
+            } else {
+              resolve(null);
+            }
+          }
+        );
+      });
+
+      if (location?.latLng) {
+        const cc = await getCountryCode(geocoder, location.latLng);
+        if (cc === "FR") return location;
+      }
+    }
+    return null;
   }
 
   useEffect(() => {
     if (!isLoaded || !panoDivRef.current || !mapDivRef.current) return;
 
-    const streetViewService = new google.maps.StreetViewService();
+    const sv = new google.maps.StreetViewService();
+    const geocoder = new google.maps.Geocoder();
 
-    // Cherche un spawn valide
-    getRandomStreetView(streetViewService)
-      .then((location) => {
-        // Street View plein écran
-        panoRef.current = new google.maps.StreetViewPanorama(
-          panoDivRef.current!,
-          {
-            position: location.latLng,
-            pov: { heading: 0, pitch: 0 },
-            zoom: 1,
-            addressControl: false,
-            linksControl: true,
-            showRoadLabels: true,
-            fullscreenControl: false,
-          }
-        );
+    // 1) Mini-carte (centrée France, sans révéler la vraie position)
+    mapRef.current = new google.maps.Map(mapDivRef.current, {
+      center: { lat: 46.6, lng: 2.2 },
+      zoom: 5,
+      streetViewControl: false,
+      mapTypeControl: false,
+      fullscreenControl: false,
+      zoomControl: true,
+      backgroundColor: "#0b0f14",
+      disableDefaultUI: true,
+    });
 
-        // Mini-carte en bas à droite
-        mapRef.current = new google.maps.Map(mapDivRef.current!, {
-          center: location.latLng,
-          zoom: 6,
-          streetViewControl: false,
-          mapTypeControl: false,
-          fullscreenControl: false,
-          zoomControl: true,
-          backgroundColor: "#0b0f14",
-          disableDefaultUI: true,
-        });
-
-        // On ajoute un marker rouge sur la mini-carte pour repérer le spawn
-        new google.maps.Marker({
-          position: location.latLng,
+    // Clic mini-carte -> poser/déplacer le marqueur "guess" (bleu)
+    mapRef.current.addListener("click", (e: google.maps.MapMouseEvent) => {
+      if (!e.latLng || !mapRef.current) return;
+      if (!guessMarkerRef.current) {
+        guessMarkerRef.current = new google.maps.Marker({
+          position: e.latLng,
           map: mapRef.current,
-          title: "Position de départ",
+          draggable: true,
+          title: "Votre supposition",
+          icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
         });
-      })
-      .catch((err) => {
-        console.error("Erreur spawn Street View :", err);
+      } else {
+        guessMarkerRef.current.setPosition(e.latLng);
+      }
+    });
+
+    // 2) Cherche un pano FR puis instancie Street View (pas avant)
+    (async () => {
+      const loc = await findFrenchPanorama(sv, geocoder);
+      const chosen = loc?.latLng;
+
+      // S’il n’y a rien trouvé, on garde l’UI carte mais on affiche un message
+      if (!chosen) {
+        setLoading(false);
+        console.warn("Aucun panorama FR trouvé après plusieurs essais.");
+        return;
+      }
+
+      // Instancier le pano UNIQUEMENT maintenant -> pas de flash Paris
+      panoRef.current = new google.maps.StreetViewPanorama(panoDivRef.current!, {
+        position: chosen,
+        pov: { heading: 0, pitch: 0 },
+        zoom: 1,
+        addressControl: false,
+        linksControl: true,
+        showRoadLabels: true,
+        fullscreenControl: false,
       });
+
+      // Marqueur ROUGE = vraie position (debug/gameplay)
+      realMarkerRef.current = new google.maps.Marker({
+        position: chosen,
+        map: mapRef.current!,
+        title: "Vraie position",
+        icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+      });
+
+      setLoading(false);
+    })();
 
     return () => {
       mapRef.current = null;
       panoRef.current = null;
+      realMarkerRef.current = null;
+      guessMarkerRef.current = null;
     };
   }, [isLoaded]);
 
@@ -114,9 +165,30 @@ export default function MapWithStreetView() {
 
   return (
     <div className="stage">
-      {/* Street View plein écran */}
+      {/* Street View plein écran (conteneur) */}
       <div className="pano-fill">
-        <div ref={panoDivRef} className="fill" />
+        {/* On masque visuellement tant que le spawn n'est pas prêt */}
+        <div
+          ref={panoDivRef}
+          className="fill"
+          style={{ visibility: loading ? "hidden" : "visible" }}
+        />
+        {loading && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(11,15,20,.6)",
+              backdropFilter: "blur(2px)",
+              fontSize: 16,
+            }}
+          >
+            Recherche d’un spot en France…
+          </div>
+        )}
       </div>
 
       {/* Mini-carte en bas à droite */}
