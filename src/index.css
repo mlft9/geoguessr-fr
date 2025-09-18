@@ -58,8 +58,14 @@ body,
   transition: width 0.28s ease, height 0.28s ease, box-shadow 0.28s ease;
 }
 
-.overlay-map.small { width: 340px; height: 220px; }
-.overlay-map.large { width: 540px; height: 360px; }
+.overlay-map.small {
+  width: 340px;
+  height: 220px;
+}
+.overlay-map.large {
+  width: 540px;
+  height: 360px;
+}
 
 /* --- Bouton toggle --- */
 .overlay-toggle {
@@ -82,5 +88,61 @@ body,
 }
 
 .overlay-map.large.panel {
-  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* Overlay résultat plein écran */
+.result-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 15, 20, 0.95); /* fond uni sombre */
+}
+
+.result-card {
+  width: min(900px, 92vw);
+  height: min(560px, 88vh);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 10px;
+}
+.result-header,
+.result-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.result-footer {
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+.result-map {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.badge {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(17, 22, 28, 0.9);
+  font-size: 13px;
+}
+.btn {
+  padding: 8px 12px;
+  background: rgba(17, 22, 28, 0.95);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }

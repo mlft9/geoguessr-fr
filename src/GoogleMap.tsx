@@ -24,10 +24,18 @@ export default function MapWithStreetView() {
   const guessMarkerRef = useRef<google.maps.Marker | null>(null);
   const lineRef = useRef<google.maps.Polyline | null>(null);
 
+  // Overlay Résultat
+  const resultMapDivRef = useRef<HTMLDivElement | null>(null);
+  const resultMapRef = useRef<google.maps.Map | null>(null);
+  const resultLineRef = useRef<google.maps.Polyline | null>(null);
+  const resultRealRef = useRef<google.maps.Marker | null>(null);
+  const resultGuessRef = useRef<google.maps.Marker | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [isLarge, setIsLarge] = useState(false);
   const [validated, setValidated] = useState(false);
-  const validatedRef = useRef(false); // <- suit validated en temps réel
+  const validatedRef = useRef(false);
+  const [showResult, setShowResult] = useState(false);
   const [result, setResult] = useState<{ km: number; score: number } | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
@@ -35,7 +43,7 @@ export default function MapWithStreetView() {
     id: "gmaps-sdk",
   });
 
-  // --- utilitaires ---
+  // ---- utilitaires ----
   function randomCoords(): google.maps.LatLngLiteral {
     const lat =
       FR_BOUNDS.latMin + (FR_BOUNDS.latMax - FR_BOUNDS.latMin) * Math.random();
@@ -118,12 +126,12 @@ export default function MapWithStreetView() {
     return Math.max(0, Math.min(5000, s));
   }
 
-  // --- sync ref <- state ---
+  // ---- sync ref <- state ----
   useEffect(() => {
     validatedRef.current = validated;
   }, [validated]);
 
-  // --- init carte + listeners une seule fois ---
+  // ---- init mini-carte (1 fois) ----
   useEffect(() => {
     if (!isLoaded || !mapDivRef.current) return;
 
@@ -144,7 +152,7 @@ export default function MapWithStreetView() {
     // Clic = poser/déplacer le guess (si non validé)
     mapRef.current.addListener("click", (e: google.maps.MapMouseEvent) => {
       if (!e.latLng || !mapRef.current) return;
-      if (validatedRef.current) return; // <-- utilise la ref à jour
+      if (validatedRef.current) return;
 
       if (!guessMarkerRef.current) {
         guessMarkerRef.current = new google.maps.Marker({
@@ -164,29 +172,27 @@ export default function MapWithStreetView() {
     };
   }, [isLoaded]);
 
-  // --- première manche ---
+  // ---- première manche ----
   useEffect(() => {
     if (!isLoaded || !panoDivRef.current) return;
-    startNewRound(); // démarre la 1ère manche
+    startNewRound();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded]);
 
-  // --- helpers de round ---
+  // ---- helpers de round ----
   async function startNewRound() {
     if (!isLoaded || !panoDivRef.current || !mapRef.current) return;
 
     setLoading(true);
     setValidated(false);
+    setShowResult(false);
     setResult(null);
 
-    // Nettoyage visuel
+    // Nettoyage visuel mini-carte
     lineRef.current?.setMap(null);
     lineRef.current = null;
-
     guessMarkerRef.current?.setMap(null);
     guessMarkerRef.current = null;
-
-    // Recentrer la mini-carte “neutre”
     mapRef.current.setZoom(5);
     mapRef.current.setCenter(new google.maps.LatLng(46.6, 2.2));
 
@@ -202,7 +208,7 @@ export default function MapWithStreetView() {
       return;
     }
 
-    // Instancier (ou mettre à jour) Street View
+    // Instancier / mettre à jour Street View
     if (!panoRef.current) {
       panoRef.current = new google.maps.StreetViewPanorama(panoDivRef.current, {
         position: chosen,
@@ -217,7 +223,7 @@ export default function MapWithStreetView() {
       panoRef.current.setPosition(chosen);
     }
 
-    // Mettre à jour (ou créer) le marqueur rouge
+    // Marqueur ROUGE (vrai)
     if (!realMarkerRef.current) {
       realMarkerRef.current = new google.maps.Marker({
         position: chosen,
@@ -232,6 +238,7 @@ export default function MapWithStreetView() {
     setLoading(false);
   }
 
+  // ---- validation -> calcul + overlay résultat ----
   function onValidate() {
     if (!mapRef.current || !realMarkerRef.current) return;
     const realPos = realMarkerRef.current.getPosition();
@@ -249,6 +256,7 @@ export default function MapWithStreetView() {
     setResult({ km, score });
     setValidated(true);
 
+    // Ligne + fitBounds sur la mini-carte (pour cohérence visuelle)
     lineRef.current?.setMap(null);
     lineRef.current = new google.maps.Polyline({
       path: [realPos, guessPos],
@@ -258,12 +266,87 @@ export default function MapWithStreetView() {
       strokeWeight: 3,
       map: mapRef.current,
     });
-
     const bounds = new google.maps.LatLngBounds();
     bounds.extend(realPos);
     bounds.extend(guessPos);
     mapRef.current.fitBounds(bounds, 40);
+
+    // Afficher l’overlay résultat
+    setShowResult(true);
+    // La carte résultat sera initialisée dans l’effet ci-dessous
   }
+
+  // ---- init / update de la carte "Résultat" quand overlay ouvert ----
+  useEffect(() => {
+    if (!showResult || !resultMapDivRef.current || !mapRef.current) return;
+
+    // Récup positions existantes
+    const realPos = realMarkerRef.current?.getPosition();
+    const guessPos = guessMarkerRef.current?.getPosition();
+    if (!realPos || !guessPos) return;
+
+    // (Re)création propre de la carte résultat
+    resultMapRef.current = new google.maps.Map(resultMapDivRef.current, {
+      center: { lat: 46.6, lng: 2.2 },
+      zoom: 5,
+      streetViewControl: false,
+      mapTypeControl: false,
+      fullscreenControl: false,
+      zoomControl: true,
+      backgroundColor: "#0b0f14",
+      disableDefaultUI: true,
+      clickableIcons: false,
+      disableDoubleClickZoom: true,
+      styles: mapStyle,
+    });
+
+    // Marqueurs
+    resultRealRef.current = new google.maps.Marker({
+      position: realPos,
+      map: resultMapRef.current,
+      icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+      title: "Vraie position",
+    });
+    resultGuessRef.current = new google.maps.Marker({
+      position: guessPos,
+      map: resultMapRef.current,
+      icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+      title: "Votre supposition",
+    });
+
+    // Ligne
+    resultLineRef.current = new google.maps.Polyline({
+      path: [realPos, guessPos],
+      geodesic: true,
+      strokeColor: "#66a3ff",
+      strokeOpacity: 0.9,
+      strokeWeight: 3,
+      map: resultMapRef.current,
+    });
+
+    // Fit bounds
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(realPos);
+    bounds.extend(guessPos);
+    resultMapRef.current.fitBounds(bounds, 40);
+
+    return () => {
+      resultLineRef.current?.setMap(null);
+      resultLineRef.current = null;
+      resultRealRef.current = null;
+      resultGuessRef.current = null;
+      resultMapRef.current = null;
+    };
+  }, [showResult]);
+
+  // ---- resize mini-carte ----
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const center = mapRef.current.getCenter();
+    // @ts-ignore
+    google.maps.event.trigger(mapRef.current, "resize");
+    if (center) mapRef.current.setCenter(center);
+  }, [isLarge]);
 
   if (loadError) return <div>Erreur de chargement Google Maps</div>;
   if (!isLoaded) return <div>Chargement…</div>;
@@ -297,7 +380,6 @@ export default function MapWithStreetView() {
 
       {/* Mini-carte */}
       <div className={`overlay-map panel ${isLarge ? "large" : "small"}`}>
-        {/* Agrandir / Réduire */}
         <button
           className="overlay-toggle"
           onClick={() => setIsLarge((v) => !v)}
@@ -306,71 +388,43 @@ export default function MapWithStreetView() {
           {isLarge ? "Réduire" : "Agrandir"}
         </button>
 
-        {/* Valider */}
         <button
           onClick={onValidate}
-          style={{
-            position: "absolute",
-            left: 8,
-            bottom: 8,
-            padding: "8px 12px",
-            background: "rgba(17,22,28,0.95)",
-            border: "1px solid #1b2430",
-            color: "#e6e8eb",
-            borderRadius: 10,
-            fontSize: 13,
-            cursor: "pointer",
-            zIndex: 3,
-          }}
+          className="btn"
+          style={{ position: "absolute", left: 8, bottom: 8, zIndex: 3 }}
           disabled={validated}
           title="Calculer distance et score"
         >
           {validated ? "Validé" : "Valider"}
         </button>
 
-        {/* Manche suivante (visible après validation) */}
-        {validated && (
-          <button
-            onClick={startNewRound}
-            style={{
-              position: "absolute",
-              right: 8,
-              bottom: 8,
-              padding: "8px 12px",
-              background: "rgba(17,22,28,0.95)",
-              border: "1px solid #1b2430",
-              color: "#e6e8eb",
-              borderRadius: 10,
-              fontSize: 13,
-              cursor: "pointer",
-              zIndex: 3,
-            }}
-            title="Nouvelle manche"
-          >
-            Manche suivante
-          </button>
-        )}
-
         <div ref={mapDivRef} className="fill" />
       </div>
 
-      {/* Résultat */}
-      {result && (
-        <div
-          style={{
-            position: "absolute",
-            top: 16,
-            left: 16,
-            background: "rgba(17,22,28,0.9)",
-            border: "1px solid #1b2430",
-            color: "#e6e8eb",
-            padding: "10px 12px",
-            borderRadius: 12,
-            zIndex: 3,
-            fontSize: 14,
-          }}
-        >
-          Distance : <b>{result.km.toFixed(1)} km</b> — Score : <b>{result.score}</b>/5000
+      {/* Overlay Résultat */}
+      {showResult && result && (
+        <div className="result-overlay">
+          <div className="result-card panel">
+            <div className="result-header">
+              <div className="badge">
+                Distance : <b>{(result.km * 1000).toFixed(0)} m</b> ({result.km.toFixed(2)} km)
+              </div>
+              <div className="badge">Score : <b>{result.score}</b> / 5000</div>
+            </div>
+
+            <div className="result-map">
+              <div ref={resultMapDivRef} className="fill" />
+            </div>
+
+            <div className="result-footer">
+              <button className="btn" onClick={() => setShowResult(false)}>
+                Fermer
+              </button>
+              <button className="btn" onClick={startNewRound}>
+                Manche suivante
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
