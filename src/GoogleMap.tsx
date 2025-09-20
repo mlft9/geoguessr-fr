@@ -165,7 +165,7 @@ function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
   const urban = Math.random() < 0.85;
   if (urban) {
     const center = CITY_SEEDS[Math.floor(Math.random() * CITY_SEEDS.length)];
-    const maxKm = 8; // “autour de la ville”
+    const maxKm = 4; // “autour de la ville”
     const a = Math.random() * 2 * Math.PI;
     const r = Math.random() * maxKm;
     const dLat = r / 111; // ~km->deg
@@ -244,12 +244,22 @@ export default function MapWithStreetView() {
       const { seed, radius } = weightedSeed();
       const location = await new Promise<google.maps.StreetViewLocation | null>((resolve) => {
         sv.getPanorama(
-          { location: seed, radius, preference: google.maps.StreetViewPreference.NEAREST },
+          {
+            location: seed,
+            radius,
+            preference: google.maps.StreetViewPreference.NEAREST,
+            source: google.maps.StreetViewSource.OUTDOOR, // <-- évite l’indoor (gares, malls, etc.)
+          },
           (data, status) => {
-            if (status === google.maps.StreetViewStatus.OK && data?.location) resolve(data.location);
-            else resolve(null);
+            const hasLinks = (data?.links?.length ?? 0) > 0; // <-- navigable ou pas ?
+            if (status === google.maps.StreetViewStatus.OK && data?.location && hasLinks) {
+              resolve(data.location);
+            } else {
+              resolve(null);
+            }
           }
         );
+
       });
 
       if (location?.latLng) {
