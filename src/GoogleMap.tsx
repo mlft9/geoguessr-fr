@@ -166,15 +166,14 @@ function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
   if (urban) {
     const center = CITY_SEEDS[Math.floor(Math.random() * CITY_SEEDS.length)];
     const maxKm = 8; // “autour de la ville”
-    a: {
-      const a = Math.random() * 2 * Math.PI;
-      const r = Math.random() * maxKm;
-      const dLat = r / 111; // ~km->deg
-      const dLng = r / (111 * Math.cos((center.lat * Math.PI) / 180));
-      const seed = { lat: center.lat + dLat * Math.sin(a), lng: center.lng + dLng * Math.cos(a) };
-      return { seed, radius: 800 }; // en ville, rayon Street View plus serré
-    }
+    const a = Math.random() * 2 * Math.PI;
+    const r = Math.random() * maxKm;
+    const dLat = r / 111; // ~km->deg
+    const dLng = r / (111 * Math.cos((center.lat * Math.PI) / 180));
+    const seed = { lat: center.lat + dLat * Math.sin(a), lng: center.lng + dLng * Math.cos(a) };
+    return { seed, radius: 800 }; // en ville, rayon Street View plus serré
   }
+
   // “route perdue” en pleine France
   const seed = {
     lat: FR_BOUNDS.latMin + (FR_BOUNDS.latMax - FR_BOUNDS.latMin) * Math.random(),
@@ -200,6 +199,10 @@ export default function MapWithStreetView() {
   const resultLineRef = useRef<google.maps.Polyline | null>(null);
   const resultRealRef = useRef<google.maps.Marker | null>(null);
   const resultGuessRef = useRef<google.maps.Marker | null>(null);
+
+  const initialPanoPosRef = useRef<google.maps.LatLng | null>(null);
+  const initialPovRef = useRef<google.maps.StreetViewPov | null>(null);
+
 
   const [loading, setLoading] = useState(true);
   const [isLarge, setIsLarge] = useState(false);
@@ -365,6 +368,10 @@ export default function MapWithStreetView() {
       panoRef.current.setPosition(chosen);
     }
 
+    initialPanoPosRef.current = chosen;                         // position de départ
+    initialPovRef.current = panoRef.current.getPov();           // POV de départ (heading/pitch)
+    panoRef.current.setZoom(1);                                 // zoom de départ (optionnel)
+
     if (!realMarkerRef.current) {
       realMarkerRef.current = new google.maps.Marker({
         position: chosen,
@@ -380,6 +387,14 @@ export default function MapWithStreetView() {
 
     setLoading(false);
   }
+
+  function resetToStart() {
+    if (!panoRef.current || !initialPanoPosRef.current) return;
+    panoRef.current.setPosition(initialPanoPosRef.current);
+    if (initialPovRef.current) panoRef.current.setPov(initialPovRef.current);
+    panoRef.current.setZoom(1);
+  }
+
 
   // ---- validation -> calcul + overlay résultat ----
   function onValidate() {
@@ -494,6 +509,23 @@ export default function MapWithStreetView() {
         >
           {isLarge ? "Réduire" : "Agrandir"}
         </button>
+        {/* Bouton Revenir au départ */}
+        <button
+          onClick={resetToStart}
+          className="btn"
+          style={{
+            position: "absolute",
+            top: 12,
+            left: 12,
+            zIndex: 3,
+            opacity: loading ? 0.5 : 1,
+            pointerEvents: loading ? "none" : "auto",
+          }}
+          title="Revenir à la position et au point de vue initiaux"
+        >
+          Revenir au départ
+        </button>
+
         <button
           onClick={onValidate}
           className="btn"
