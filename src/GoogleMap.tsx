@@ -7,9 +7,9 @@ const FR_BOUNDS = { latMin: 41.3, latMax: 51.1, lngMin: -5.1, lngMax: 9.6 };
 const SHOW_REAL_MARKER = false;
 
 // Style pour masquer les POI
-const mapStyle: google.maps.MapTypeStyle[] = [
-  { featureType: "poi", stylers: [{ visibility: "off" }] },
-];
+// Laisse les POI visibles (pas de style qui les cache)
+const mapStyle: google.maps.MapTypeStyle[] = [];
+
 
 /** Graines "urbaines" (centres villes / bourgs) — échantillon couvrant la France métropolitaine */
 const CITY_SEEDS: google.maps.LatLngLiteral[] = [
