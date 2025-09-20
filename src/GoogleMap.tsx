@@ -3,6 +3,9 @@ import { useJsApiLoader } from "@react-google-maps/api";
 
 const FR_BOUNDS = { latMin: 41.3, latMax: 51.1, lngMin: -5.1, lngMax: 9.6 };
 
+// Afficher le vrai marqueur (rouge) pendant la manche ?
+const SHOW_REAL_MARKER = false;
+
 // Style pour masquer les POI
 const mapStyle: google.maps.MapTypeStyle[] = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
@@ -153,7 +156,6 @@ const CITY_SEEDS: google.maps.LatLngLiteral[] = [
   { lat: 42.0833, lng: 9.0167 },  // Corte
 ];
 
-
 /** Retourne une coordonnée biaisée :
  *  - 85% autour d'une ville/bourg (rayon ≤ ~8 km)
  *  - 15% dans toute la France
@@ -164,12 +166,14 @@ function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
   if (urban) {
     const center = CITY_SEEDS[Math.floor(Math.random() * CITY_SEEDS.length)];
     const maxKm = 8; // “autour de la ville”
-    const a = Math.random() * 2 * Math.PI;
-    const r = Math.random() * maxKm;
-    const dLat = r / 111; // ~km->deg
-    const dLng = r / (111 * Math.cos((center.lat * Math.PI) / 180));
-    const seed = { lat: center.lat + dLat * Math.sin(a), lng: center.lng + dLng * Math.cos(a) };
-    return { seed, radius: 800 }; // en ville, rayon Street View plus serré
+    a: {
+      const a = Math.random() * 2 * Math.PI;
+      const r = Math.random() * maxKm;
+      const dLat = r / 111; // ~km->deg
+      const dLng = r / (111 * Math.cos((center.lat * Math.PI) / 180));
+      const seed = { lat: center.lat + dLat * Math.sin(a), lng: center.lng + dLng * Math.cos(a) };
+      return { seed, radius: 800 }; // en ville, rayon Street View plus serré
+    }
   }
   // “route perdue” en pleine France
   const seed = {
@@ -265,12 +269,11 @@ export default function MapWithStreetView() {
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
 
-function scoreFromKm(km: number) {
-  const scaleKm = 150; // plus petit => la chute est plus rapide
-  const s = Math.round(5000 * Math.exp(-km / scaleKm));
-  return Math.max(0, Math.min(5000, s));
-}
-
+  function scoreFromKm(km: number) {
+    const scaleKm = 150; // plus petit => la chute est plus rapide
+    const s = Math.round(5000 * Math.exp(-km / scaleKm));
+    return Math.max(0, Math.min(5000, s));
+  }
 
   // ---- sync ref <- state ----
   useEffect(() => { validatedRef.current = validated; }, [validated]);
@@ -365,12 +368,14 @@ function scoreFromKm(km: number) {
     if (!realMarkerRef.current) {
       realMarkerRef.current = new google.maps.Marker({
         position: chosen,
-        map: mapRef.current,
+        map: SHOW_REAL_MARKER ? mapRef.current : null, // visible ou caché selon le flag
         title: "Vraie position",
         icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
       });
     } else {
       realMarkerRef.current.setPosition(chosen);
+      // s’assurer que l’affichage correspond au flag à chaque nouvelle manche
+      realMarkerRef.current.setMap(SHOW_REAL_MARKER ? mapRef.current : null);
     }
 
     setLoading(false);
