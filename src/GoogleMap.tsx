@@ -209,6 +209,7 @@ export default function MapWithStreetView() {
   const [validated, setValidated] = useState(false);
   const validatedRef = useRef(false);
   const [showResult, setShowResult] = useState(false);
+  const [isHover, setIsHover] = useState(false);
   const [result, setResult] = useState<{ km: number; score: number } | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
@@ -498,27 +499,43 @@ export default function MapWithStreetView() {
     <div className="stage">
       {/* Street View plein écran */}
       <div className="pano-fill">
-        <div ref={panoDivRef} className="fill" style={{ visibility: loading ? "hidden" : "visible" }} />
+        <div
+          ref={panoDivRef}
+          className="fill"
+          style={{ visibility: loading ? "hidden" : "visible" }}
+        />
         {loading && (
-          <div style={{
-            position: "absolute", inset: 0, display: "flex",
-            alignItems: "center", justifyContent: "center",
-            background: "rgba(11,15,20,.6)", fontSize: 16,
-          }}>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(11,15,20,.6)",
+              fontSize: 16,
+            }}
+          >
             Recherche d’un spot en France…
           </div>
         )}
       </div>
 
       {/* Mini-carte */}
-      <div className={`overlay-map panel ${isLarge ? "large" : "small"}`}>
+      <div
+        className={`overlay-map panel ${isLarge ? "xlarge" : isHover ? "large" : "small"
+          }`}
+        onMouseEnter={() => setIsHover(true)}
+        onMouseLeave={() => setIsHover(false)}
+      >
         <button
           className="overlay-toggle"
-          onClick={() => setIsLarge(v => !v)}
+          onClick={() => setIsLarge((v) => !v)}
           title={isLarge ? "Réduire la mini-carte" : "Agrandir la mini-carte"}
         >
           {isLarge ? "Réduire" : "Agrandir"}
         </button>
+
         {/* Bouton Revenir au départ */}
         <button
           onClick={resetToStart}
@@ -545,6 +562,7 @@ export default function MapWithStreetView() {
         >
           {validated ? "Validé" : "Valider"}
         </button>
+
         <div ref={mapDivRef} className="fill" />
       </div>
 
@@ -554,18 +572,28 @@ export default function MapWithStreetView() {
           <div className="result-card panel">
             <div className="result-header">
               <div className="badge">
-                Distance : <b>{(result.km * 1000).toFixed(0)} m</b> ({result.km.toFixed(2)} km)
+                Distance : <b>{(result.km * 1000).toFixed(0)} m</b> (
+                {result.km.toFixed(2)} km)
               </div>
-              <div className="badge">Score : <b>{result.score}</b> / 5000</div>
+              <div className="badge">
+                Score : <b>{result.score}</b> / 5000
+              </div>
             </div>
-            <div className="result-map"><div ref={resultMapDivRef} className="fill" /></div>
+            <div className="result-map">
+              <div ref={resultMapDivRef} className="fill" />
+            </div>
             <div className="result-footer">
-              <button className="btn" onClick={() => setShowResult(false)}>Fermer</button>
-              <button className="btn" onClick={startNewRound}>Manche suivante</button>
+              <button className="btn" onClick={() => setShowResult(false)}>
+                Fermer
+              </button>
+              <button className="btn" onClick={startNewRound}>
+                Manche suivante
+              </button>
             </div>
           </div>
         </div>
       )}
     </div>
   );
+
 }

@@ -40,7 +40,8 @@ body,
 /* --- Layout principal --- */
 .stage {
   position: relative;
-  height: calc(100vh - 24px); /* 24px = padding haut+bas de app-wrap */
+  height: calc(100vh - 24px);
+  /* 24px = padding haut+bas de app-wrap */
 }
 
 .pano-fill {
@@ -59,13 +60,23 @@ body,
 }
 
 .overlay-map.small {
-  width: 340px;
-  height: 220px;
+  width: 300px;
+  height: 200px;
 }
+
 .overlay-map.large {
-  width: 540px;
-  height: 360px;
+  width: 500px;
+  height: 350px;
 }
+
+/* hover */
+.overlay-map.xlarge {
+  width: 800px;
+  height: 600px;
+}
+
+/* clic bouton */
+
 
 /* --- Bouton toggle --- */
 .overlay-toggle {
@@ -80,9 +91,11 @@ body,
   font-size: 12px;
   cursor: pointer;
   user-select: none;
-  z-index: 3; /* bouton toujours au-dessus de la carte */
+  z-index: 3;
+  /* bouton toujours au-dessus de la carte */
   transition: background 0.2s ease;
 }
+
 .overlay-toggle:hover {
   background: rgba(17, 22, 28, 1);
 }
@@ -99,7 +112,8 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(11, 15, 20, 0.95); /* fond uni sombre */
+  background: rgba(11, 15, 20, 0.95);
+  /* fond uni sombre */
 }
 
 .result-card {
@@ -109,6 +123,7 @@ body,
   grid-template-rows: auto 1fr auto;
   gap: 10px;
 }
+
 .result-header,
 .result-footer {
   display: flex;
@@ -117,15 +132,18 @@ body,
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
 }
+
 .result-footer {
   border-top: 1px solid var(--border);
   border-bottom: none;
 }
+
 .result-map {
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
 }
+
 .badge {
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -133,6 +151,7 @@ body,
   background: rgba(17, 22, 28, 0.9);
   font-size: 13px;
 }
+
 .btn {
   padding: 8px 12px;
   background: rgba(17, 22, 28, 0.95);
@@ -142,6 +161,7 @@ body,
   font-size: 13px;
   cursor: pointer;
 }
+
 .btn:disabled {
   opacity: 0.6;
   cursor: default;
