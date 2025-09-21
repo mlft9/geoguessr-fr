@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useJsApiLoader } from "@react-google-maps/api";
 import ResultOverlay from "./components/ResultOverlay";
+import MiniMap, { type MiniMapHandle } from "./components/MiniMap";
 
 // ========================================================
 // 2) Constantes & configuration
@@ -258,20 +259,18 @@ function scoreFromKm(km: number) {
 }
 
 export default function MapWithStreetView() {
-  // Refs DOM
+  // Street View refs
   const panoDivRef = useRef<HTMLDivElement | null>(null);
-  const mapDivRef = useRef<HTMLDivElement | null>(null);
-
-  // Objets GMaps
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
   const realMarkerRef = useRef<google.maps.Marker | null>(null);
-  const guessMarkerRef = useRef<google.maps.Marker | null>(null);
   const lineRef = useRef<google.maps.Polyline | null>(null);
 
   // Reset Street View
   const initialPanoPosRef = useRef<google.maps.LatLng | null>(null);
   const initialPovRef = useRef<google.maps.StreetViewPov | null>(null);
+
+  // MiniMap ref (accès à la map + guess)
+  const miniMapRef = useRef<MiniMapHandle | null>(null);
 
   // State
   const [loading, setLoading] = useState(true);
@@ -279,10 +278,9 @@ export default function MapWithStreetView() {
   const [validated, setValidated] = useState(false);
   const validatedRef = useRef(false);
   const [showResult, setShowResult] = useState(false);
-  const [isHover, setIsHover] = useState(false);
   const [result, setResult] = useState<{ km: number; score: number } | null>(null);
 
-  // NEW: positions figées pour <ResultOverlay />
+  // positions figées pour l’overlay
   const [lastReal, setLastReal] = useState<google.maps.LatLngLiteral | null>(null);
   const [lastGuess, setLastGuess] = useState<google.maps.LatLngLiteral | null>(null);
 
@@ -296,45 +294,6 @@ export default function MapWithStreetView() {
     validatedRef.current = validated;
   }, [validated]);
 
-  // init mini-carte
-  useEffect(() => {
-    if (!isLoaded || !mapDivRef.current) return;
-
-    mapRef.current = new google.maps.Map(mapDivRef.current, {
-      center: { lat: 46.6, lng: 2.2 },
-      zoom: 5,
-      streetViewControl: false,
-      mapTypeControl: false,
-      fullscreenControl: false,
-      zoomControl: true,
-      backgroundColor: "#0b0f14",
-      disableDefaultUI: true,
-      clickableIcons: false,
-      disableDoubleClickZoom: true,
-      styles: mapStyle,
-    });
-
-    mapRef.current.addListener("click", (e: google.maps.MapMouseEvent) => {
-      if (!e.latLng || !mapRef.current) return;
-      if (validatedRef.current) return;
-      if (!guessMarkerRef.current) {
-        guessMarkerRef.current = new google.maps.Marker({
-          position: e.latLng,
-          map: mapRef.current,
-          draggable: true,
-          title: "Votre supposition",
-          icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-        });
-      } else {
-        guessMarkerRef.current.setPosition(e.latLng);
-      }
-    });
-
-    return () => {
-      mapRef.current = null;
-    };
-  }, [isLoaded]);
-
   // première manche
   useEffect(() => {
     if (!isLoaded || !panoDivRef.current) return;
@@ -342,35 +301,30 @@ export default function MapWithStreetView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded]);
 
-  // resize mini-carte quand on l’agrandit/réduit
-  useEffect(() => {
-    if (!mapRef.current) return;
-    const center = mapRef.current.getCenter();
-    // @ts-ignore
-    google.maps.event.trigger(mapRef.current, "resize");
-    if (center) mapRef.current.setCenter(center);
-  }, [isLarge]);
-
   // --- handlers ---
   async function startNewRound() {
-    if (!isLoaded || !panoDivRef.current || !mapRef.current) return;
+    if (!isLoaded || !panoDivRef.current) return;
 
     setLoading(true);
     setValidated(false);
     setShowResult(false);
     setResult(null);
-
     setLastReal(null);
     setLastGuess(null);
 
+    // Nettoie l’ancienne ligne et la supposition
     lineRef.current?.setMap(null);
     lineRef.current = null;
-    guessMarkerRef.current?.setMap(null);
-    guessMarkerRef.current = null;
+    miniMapRef.current?.clearGuess();
 
-    mapRef.current.setZoom(5);
-    mapRef.current.setCenter(new google.maps.LatLng(46.6, 2.2));
+    // Reset mini-carte
+    const map = miniMapRef.current?.getMap();
+    if (map) {
+      map.setZoom(5);
+      map.setCenter(new google.maps.LatLng(46.6, 2.2));
+    }
 
+    // Choisir un nouveau pano FR
     const sv = new google.maps.StreetViewService();
     const geocoder = new google.maps.Geocoder();
 
@@ -404,13 +358,14 @@ export default function MapWithStreetView() {
     if (!realMarkerRef.current) {
       realMarkerRef.current = new google.maps.Marker({
         position: chosen,
-        map: SHOW_REAL_MARKER ? mapRef.current : null,
+        map: SHOW_REAL_MARKER ? miniMapRef.current?.getMap() ?? null : null,
         title: "Vraie position",
         icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
       });
     } else {
       realMarkerRef.current.setPosition(chosen);
-      realMarkerRef.current.setMap(SHOW_REAL_MARKER ? mapRef.current : null);
+      // s’assurer que l’affichage suit le flag
+      realMarkerRef.current.setMap(SHOW_REAL_MARKER ? miniMapRef.current?.getMap() ?? null : null);
     }
 
     setLoading(false);
@@ -424,10 +379,10 @@ export default function MapWithStreetView() {
   }
 
   function onValidate() {
-    if (!mapRef.current || !realMarkerRef.current) return;
-    const realPos = realMarkerRef.current.getPosition();
-    const guessPos = guessMarkerRef.current?.getPosition();
-    if (!guessPos || !realPos) {
+    const map = miniMapRef.current?.getMap();
+    const realPos = realMarkerRef.current?.getPosition();
+    const guessPos = miniMapRef.current?.getGuessLatLng();
+    if (!map || !realPos || !guessPos) {
       alert("Pose d'abord ta supposition (clic sur la mini-carte).");
       return;
     }
@@ -439,10 +394,11 @@ export default function MapWithStreetView() {
     setResult({ km, score });
     setValidated(true);
 
-    // NEW: on fige les positions pour l’overlay
+    // fige pour l’overlay
     setLastReal(a);
     setLastGuess(b);
 
+    // Trace la ligne sur la mini-carte
     lineRef.current?.setMap(null);
     lineRef.current = new google.maps.Polyline({
       path: [realPos, guessPos],
@@ -450,12 +406,12 @@ export default function MapWithStreetView() {
       strokeColor: "#66a3ff",
       strokeOpacity: 0.9,
       strokeWeight: 3,
-      map: mapRef.current,
+      map,
     });
     const bounds = new google.maps.LatLngBounds();
     bounds.extend(realPos);
     bounds.extend(guessPos);
-    mapRef.current.fitBounds(bounds, 40);
+    map.fitBounds(bounds, 40);
 
     setShowResult(true);
   }
@@ -489,43 +445,20 @@ export default function MapWithStreetView() {
         )}
       </div>
 
-      {/* Mini-carte */}
-      <div
-        className={`overlay-map panel ${isLarge ? "xlarge" : isHover ? "large" : "small"}`}
-        onMouseEnter={() => setIsHover(true)}
-        onMouseLeave={() => setIsHover(false)}
-      >
-        <button
-          className="overlay-toggle"
-          onClick={() => setIsLarge((v) => !v)}
-          title={isLarge ? "Réduire la mini-carte" : "Agrandir la mini-carte"}
-        >
-          {isLarge ? "Réduire" : "Agrandir"}
-        </button>
+      {/* Mini-carte (extrait) */}
+      <MiniMap
+        ref={miniMapRef}
+        isLoaded={isLoaded}
+        isLarge={isLarge}
+        onToggleSize={() => setIsLarge((v) => !v)}
+        loading={loading}
+        validated={validated}
+        onValidate={onValidate}
+        onResetToStart={resetToStart}
+        mapStyle={mapStyle}
+      />
 
-        <button
-          onClick={resetToStart}
-          className="btn"
-          style={{ position: "absolute", top: 12, left: 12, zIndex: 3, opacity: loading ? 0.5 : 1, pointerEvents: loading ? "none" : "auto" }}
-          title="Revenir à la position et au point de vue initiaux"
-        >
-          Revenir au départ
-        </button>
-
-        <button
-          onClick={onValidate}
-          className="btn"
-          style={{ position: "absolute", left: 8, bottom: 8, zIndex: 3 }}
-          disabled={validated}
-          title="Calculer distance et score"
-        >
-          {validated ? "Validé" : "Valider"}
-        </button>
-
-        <div ref={mapDivRef} className="fill" />
-      </div>
-
-      {/* Overlay Résultat (extrait en composant) */}
+      {/* Overlay Résultat */}
       {showResult && result && lastReal && lastGuess && (
         <ResultOverlay
           real={lastReal}
