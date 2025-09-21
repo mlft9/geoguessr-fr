@@ -80,7 +80,7 @@ async function findFrenchPanorama(
       }
     );
 
-  if (location?.latLng) {
+    if (location?.latLng) {
       const cc = await getCountryCode(geocoder, location.latLng);
       if (cc === "FR") return location;
     }
@@ -118,6 +118,9 @@ export default function MapWithStreetView() {
   const [lastReal, setLastReal] = useState<google.maps.LatLngLiteral | null>(null);
   const [lastGuess, setLastGuess] = useState<google.maps.LatLngLiteral | null>(null);
 
+  // erreur panorama
+  const [panoError, setPanoError] = useState<string | null>(null);
+
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string,
     id: "gmaps-sdk",
@@ -139,6 +142,7 @@ export default function MapWithStreetView() {
   async function startNewRound() {
     if (!isLoaded || !panoDivRef.current) return;
 
+    setPanoError(null); // reset erreur
     setLoading(true);
     setValidated(false);
     setShowResult(false);
@@ -167,7 +171,7 @@ export default function MapWithStreetView() {
 
     if (!chosen) {
       setLoading(false);
-      console.warn("Aucun panorama FR trouvé après plusieurs essais.");
+      setPanoError("Aucun panorama Street View trouvé en France. Réessayer ?");
       return;
     }
 
@@ -302,6 +306,33 @@ export default function MapWithStreetView() {
           onNext={startNewRound}
           mapStyle={mapStyle}
         />
+      )}
+
+      {/* Panneau "Réessayer" si aucun panorama */}
+      {panoError && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(11,15,20,.6)",
+            zIndex: 1000,
+          }}
+        >
+          <div className="panel" style={{ padding: 16, minWidth: 320 }}>
+            <div style={{ marginBottom: 12 }}>{panoError}</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn" onClick={() => setPanoError(null)}>
+                Fermer
+              </button>
+              <button className="btn" onClick={startNewRound}>
+                Réessayer
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
