@@ -1,16 +1,24 @@
+// MapWithStreetView.tsx
+// ========================================================
+// 1) Imports
+// ========================================================
 import { useEffect, useRef, useState } from "react";
 import { useJsApiLoader } from "@react-google-maps/api";
 
+// ========================================================
+// 2) Constantes & configuration
+// ========================================================
 const FR_BOUNDS = { latMin: 41.3, latMax: 51.1, lngMin: -5.1, lngMax: 9.6 };
 
 // Afficher le vrai marqueur (rouge) pendant la manche ?
 const SHOW_REAL_MARKER = false;
 
-// Style pour masquer les POI
-// Laisse les POI visibles (pas de style qui les cache)
+// Style pour masquer les POI (ici vide => POI visibles)
 const mapStyle: google.maps.MapTypeStyle[] = [];
 
-
+// ========================================================
+// 3) Données (seeds villes, etc.)
+// ========================================================
 /** Graines "urbaines" (centres villes / bourgs) — échantillon couvrant la France métropolitaine */
 const CITY_SEEDS: google.maps.LatLngLiteral[] = [
   // grandes villes
@@ -156,35 +164,115 @@ const CITY_SEEDS: google.maps.LatLngLiteral[] = [
   { lat: 42.0833, lng: 9.0167 },  // Corte
 ];
 
+// ========================================================
+// 4) Utilitaires (purs, sans dépendances React)
+// ========================================================
 /** Retourne une coordonnée biaisée :
- *  - 85% autour d'une ville/bourg (rayon ≤ ~8 km)
+ *  - 85% autour d'une ville/bourg (rayon ≤ ~4 km)
  *  - 15% dans toute la France
- * Renvoie aussi un rayon de recherche Street View adapté.
+ * + un rayon Street View adapté.
  */
 function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
   const urban = Math.random() < 0.85;
   if (urban) {
     const center = CITY_SEEDS[Math.floor(Math.random() * CITY_SEEDS.length)];
-    const maxKm = 4; // “autour de la ville”
+    const maxKm = 4;
     const a = Math.random() * 2 * Math.PI;
     const r = Math.random() * maxKm;
     const dLat = r / 111; // ~km->deg
     const dLng = r / (111 * Math.cos((center.lat * Math.PI) / 180));
     const seed = { lat: center.lat + dLat * Math.sin(a), lng: center.lng + dLng * Math.cos(a) };
-    return { seed, radius: 800 }; // en ville, rayon Street View plus serré
+    return { seed, radius: 800 }; // en ville, plus serré
   }
-
-  // “route perdue” en pleine France
+  // rural
   const seed = {
     lat: FR_BOUNDS.latMin + (FR_BOUNDS.latMax - FR_BOUNDS.latMin) * Math.random(),
     lng: FR_BOUNDS.lngMin + (FR_BOUNDS.lngMax - FR_BOUNDS.lngMin) * Math.random(),
   };
-  return { seed, radius: 3000 }; // en rural, rayon plus large pour accrocher un pano
+  return { seed, radius: 3000 }; // rural, plus large pour accrocher un pano
 }
 
+function getCountryCode(
+  geocoder: google.maps.Geocoder,
+  latLng: google.maps.LatLng
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    geocoder.geocode({ location: latLng }, (results, status) => {
+      if (status === google.maps.GeocoderStatus.OK && results) {
+        for (const r of results) {
+          for (const comp of r.address_components) {
+            if (comp.types.includes("country")) {
+              resolve(comp.short_name ?? null);
+              return;
+            }
+          }
+        }
+      }
+      resolve(null);
+    });
+  });
+}
+
+async function findFrenchPanorama(
+  sv: google.maps.StreetViewService,
+  geocoder: google.maps.Geocoder,
+  maxAttempts = 30
+): Promise<google.maps.StreetViewLocation | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const { seed, radius } = weightedSeed();
+    const location = await new Promise<google.maps.StreetViewLocation | null>((resolve) => {
+      sv.getPanorama(
+        {
+          location: seed,
+          radius,
+          preference: google.maps.StreetViewPreference.NEAREST,
+          source: google.maps.StreetViewSource.OUTDOOR,
+        },
+        (data, status) => {
+          const hasLinks = (data?.links?.length ?? 0) > 0; // navigable ?
+          if (status === google.maps.StreetViewStatus.OK && data?.location && hasLinks) {
+            resolve(data.location);
+          } else {
+            resolve(null);
+          }
+        }
+      );
+    });
+
+    if (location?.latLng) {
+      const cc = await getCountryCode(geocoder, location.latLng);
+      if (cc === "FR") return location;
+    }
+  }
+  return null;
+}
+
+function haversineKm(a: google.maps.LatLngLiteral, b: google.maps.LatLngLiteral) {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const la1 = (a.lat * Math.PI) / 180;
+  const la2 = (b.lat * Math.PI) / 180;
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+  const h = sinDLat * sinDLat + Math.cos(la1) * Math.cos(la2) * sinDLng * sinDLng;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function scoreFromKm(km: number) {
+  const scaleKm = 150; // plus petit => la chute est plus rapide (France-only)
+  const s = Math.round(5000 * Math.exp(-km / scaleKm));
+  return Math.max(0, Math.min(5000, s));
+}
+
+// ========================================================
+// 5) Composant principal
+// ========================================================
 export default function MapWithStreetView() {
+  // ----- 5.1 Refs DOM & objets Google Maps -----
   const panoDivRef = useRef<HTMLDivElement | null>(null);
   const mapDivRef = useRef<HTMLDivElement | null>(null);
+  const resultMapDivRef = useRef<HTMLDivElement | null>(null);
 
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -194,16 +282,16 @@ export default function MapWithStreetView() {
   const lineRef = useRef<google.maps.Polyline | null>(null);
 
   // Overlay Résultat
-  const resultMapDivRef = useRef<HTMLDivElement | null>(null);
   const resultMapRef = useRef<google.maps.Map | null>(null);
   const resultLineRef = useRef<google.maps.Polyline | null>(null);
   const resultRealRef = useRef<google.maps.Marker | null>(null);
   const resultGuessRef = useRef<google.maps.Marker | null>(null);
 
+  // Street View "reset"
   const initialPanoPosRef = useRef<google.maps.LatLng | null>(null);
   const initialPovRef = useRef<google.maps.StreetViewPov | null>(null);
 
-
+  // ----- 5.2 State -----
   const [loading, setLoading] = useState(true);
   const [isLarge, setIsLarge] = useState(false);
   const [validated, setValidated] = useState(false);
@@ -212,87 +300,20 @@ export default function MapWithStreetView() {
   const [isHover, setIsHover] = useState(false);
   const [result, setResult] = useState<{ km: number; score: number } | null>(null);
 
+  // Chargement SDK
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string,
     id: "gmaps-sdk",
   });
 
-  // ---- utilitaires existants ----
-  function getCountryCode(geocoder: google.maps.Geocoder, latLng: google.maps.LatLng): Promise<string | null> {
-    return new Promise((resolve) => {
-      geocoder.geocode({ location: latLng }, (results, status) => {
-        if (status === google.maps.GeocoderStatus.OK && results) {
-          for (const r of results) {
-            for (const comp of r.address_components) {
-              if (comp.types.includes("country")) {
-                resolve(comp.short_name ?? null);
-                return;
-              }
-            }
-          }
-        }
-        resolve(null);
-      });
-    });
-  }
+  // ----- 5.3 Effets -----
 
-  async function findFrenchPanorama(
-    sv: google.maps.StreetViewService,
-    geocoder: google.maps.Geocoder,
-    maxAttempts = 30
-  ): Promise<google.maps.StreetViewLocation | null> {
-    for (let i = 0; i < maxAttempts; i++) {
-      const { seed, radius } = weightedSeed();
-      const location = await new Promise<google.maps.StreetViewLocation | null>((resolve) => {
-        sv.getPanorama(
-          {
-            location: seed,
-            radius,
-            preference: google.maps.StreetViewPreference.NEAREST,
-            source: google.maps.StreetViewSource.OUTDOOR, // <-- évite l’indoor (gares, malls, etc.)
-          },
-          (data, status) => {
-            const hasLinks = (data?.links?.length ?? 0) > 0; // <-- navigable ou pas ?
-            if (status === google.maps.StreetViewStatus.OK && data?.location && hasLinks) {
-              resolve(data.location);
-            } else {
-              resolve(null);
-            }
-          }
-        );
+  // (a) sync ref <- state
+  useEffect(() => {
+    validatedRef.current = validated;
+  }, [validated]);
 
-      });
-
-      if (location?.latLng) {
-        const cc = await getCountryCode(geocoder, location.latLng);
-        if (cc === "FR") return location;
-      }
-    }
-    return null;
-  }
-
-  function haversineKm(a: google.maps.LatLngLiteral, b: google.maps.LatLngLiteral) {
-    const R = 6371;
-    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-    const la1 = (a.lat * Math.PI) / 180;
-    const la2 = (b.lat * Math.PI) / 180;
-    const sinDLat = Math.sin(dLat / 2);
-    const sinDLng = Math.sin(dLng / 2);
-    const h = sinDLat * sinDLat + Math.cos(la1) * Math.cos(la2) * sinDLng * sinDLng;
-    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-  }
-
-  function scoreFromKm(km: number) {
-    const scaleKm = 150; // plus petit => la chute est plus rapide
-    const s = Math.round(5000 * Math.exp(-km / scaleKm));
-    return Math.max(0, Math.min(5000, s));
-  }
-
-  // ---- sync ref <- state ----
-  useEffect(() => { validatedRef.current = validated; }, [validated]);
-
-  // ---- init mini-carte (1 fois) ----
+  // (b) init mini-carte (1 fois)
   useEffect(() => {
     if (!isLoaded || !mapDivRef.current) return;
 
@@ -326,17 +347,85 @@ export default function MapWithStreetView() {
       }
     });
 
-    return () => { mapRef.current = null; };
+    return () => {
+      mapRef.current = null;
+    };
   }, [isLoaded]);
 
-  // ---- première manche ----
+  // (c) première manche
   useEffect(() => {
     if (!isLoaded || !panoDivRef.current) return;
     startNewRound();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded]);
 
-  // ---- helpers de round ----
+  // (d) carte "Résultat"
+  useEffect(() => {
+    if (!showResult || !resultMapDivRef.current) return;
+
+    const realPos = realMarkerRef.current?.getPosition();
+    const guessPos = guessMarkerRef.current?.getPosition();
+    if (!realPos || !guessPos) return;
+
+    resultMapRef.current = new google.maps.Map(resultMapDivRef.current, {
+      center: { lat: 46.6, lng: 2.2 },
+      zoom: 5,
+      streetViewControl: false,
+      mapTypeControl: false,
+      fullscreenControl: false,
+      zoomControl: true,
+      backgroundColor: "#0b0f14",
+      disableDefaultUI: true,
+      clickableIcons: false,
+      disableDoubleClickZoom: true,
+      styles: mapStyle,
+    });
+
+    resultRealRef.current = new google.maps.Marker({
+      position: realPos,
+      map: resultMapRef.current,
+      icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+      title: "Vraie position",
+    });
+    resultGuessRef.current = new google.maps.Marker({
+      position: guessPos,
+      map: resultMapRef.current,
+      icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+      title: "Votre supposition",
+    });
+    resultLineRef.current = new google.maps.Polyline({
+      path: [realPos, guessPos],
+      geodesic: true,
+      strokeColor: "#66a3ff",
+      strokeOpacity: 0.9,
+      strokeWeight: 3,
+      map: resultMapRef.current,
+    });
+
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(realPos);
+    bounds.extend(guessPos);
+    resultMapRef.current.fitBounds(bounds, 40);
+
+    return () => {
+      resultLineRef.current?.setMap(null);
+      resultLineRef.current = null;
+      resultRealRef.current = null;
+      resultGuessRef.current = null;
+      resultMapRef.current = null;
+    };
+  }, [showResult]);
+
+  // (e) resize mini-carte (quand on l’agrandit/réduit)
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const center = mapRef.current.getCenter();
+    // @ts-ignore
+    google.maps.event.trigger(mapRef.current, "resize");
+    if (center) mapRef.current.setCenter(center);
+  }, [isLarge]);
+
+  // ----- 5.4 Callbacks (handlers) -----
   async function startNewRound() {
     if (!isLoaded || !panoDivRef.current || !mapRef.current) return;
 
@@ -379,9 +468,9 @@ export default function MapWithStreetView() {
       panoRef.current.setPosition(chosen);
     }
 
-    initialPanoPosRef.current = chosen;                         // position de départ
-    initialPovRef.current = panoRef.current.getPov();           // POV de départ (heading/pitch)
-    panoRef.current.setZoom(1);                                 // zoom de départ (optionnel)
+    initialPanoPosRef.current = chosen;               // position de départ
+    initialPovRef.current = panoRef.current.getPov(); // POV de départ
+    panoRef.current.setZoom(1);                       // zoom de départ
 
     if (!realMarkerRef.current) {
       realMarkerRef.current = new google.maps.Marker({
@@ -392,7 +481,6 @@ export default function MapWithStreetView() {
       });
     } else {
       realMarkerRef.current.setPosition(chosen);
-      // s’assurer que l’affichage correspond au flag à chaque nouvelle manche
       realMarkerRef.current.setMap(SHOW_REAL_MARKER ? mapRef.current : null);
     }
 
@@ -406,13 +494,14 @@ export default function MapWithStreetView() {
     panoRef.current.setZoom(1);
   }
 
-
-  // ---- validation -> calcul + overlay résultat ----
   function onValidate() {
     if (!mapRef.current || !realMarkerRef.current) return;
     const realPos = realMarkerRef.current.getPosition();
     const guessPos = guessMarkerRef.current?.getPosition();
-    if (!guessPos || !realPos) { alert("Pose d'abord ta supposition (clic sur la mini-carte)."); return; }
+    if (!guessPos || !realPos) {
+      alert("Pose d'abord ta supposition (clic sur la mini-carte).");
+      return;
+    }
 
     const a = { lat: realPos.lat(), lng: realPos.lng() };
     const b = { lat: guessPos.lat(), lng: guessPos.lng() };
@@ -423,75 +512,22 @@ export default function MapWithStreetView() {
 
     lineRef.current?.setMap(null);
     lineRef.current = new google.maps.Polyline({
-      path: [realPos, guessPos], geodesic: true,
-      strokeColor: "#66a3ff", strokeOpacity: 0.9, strokeWeight: 3,
+      path: [realPos, guessPos],
+      geodesic: true,
+      strokeColor: "#66a3ff",
+      strokeOpacity: 0.9,
+      strokeWeight: 3,
       map: mapRef.current,
     });
     const bounds = new google.maps.LatLngBounds();
-    bounds.extend(realPos); bounds.extend(guessPos);
+    bounds.extend(realPos);
+    bounds.extend(guessPos);
     mapRef.current.fitBounds(bounds, 40);
 
     setShowResult(true);
   }
 
-  // ---- carte "Résultat" ----
-  useEffect(() => {
-    if (!showResult || !resultMapDivRef.current) return;
-
-    const realPos = realMarkerRef.current?.getPosition();
-    const guessPos = guessMarkerRef.current?.getPosition();
-    if (!realPos || !guessPos) return;
-
-    resultMapRef.current = new google.maps.Map(resultMapDivRef.current, {
-      center: { lat: 46.6, lng: 2.2 },
-      zoom: 5,
-      streetViewControl: false,
-      mapTypeControl: false,
-      fullscreenControl: false,
-      zoomControl: true,
-      backgroundColor: "#0b0f14",
-      disableDefaultUI: true,
-      clickableIcons: false,
-      disableDoubleClickZoom: true,
-      styles: mapStyle,
-    });
-
-    resultRealRef.current = new google.maps.Marker({
-      position: realPos, map: resultMapRef.current,
-      icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png", title: "Vraie position",
-    });
-    resultGuessRef.current = new google.maps.Marker({
-      position: guessPos, map: resultMapRef.current,
-      icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png", title: "Votre supposition",
-    });
-    resultLineRef.current = new google.maps.Polyline({
-      path: [realPos, guessPos], geodesic: true,
-      strokeColor: "#66a3ff", strokeOpacity: 0.9, strokeWeight: 3,
-      map: resultMapRef.current,
-    });
-
-    const bounds = new google.maps.LatLngBounds();
-    bounds.extend(realPos); bounds.extend(guessPos);
-    resultMapRef.current.fitBounds(bounds, 40);
-
-    return () => {
-      resultLineRef.current?.setMap(null);
-      resultLineRef.current = null;
-      resultRealRef.current = null;
-      resultGuessRef.current = null;
-      resultMapRef.current = null;
-    };
-  }, [showResult]);
-
-  // ---- resize mini-carte ----
-  useEffect(() => {
-    if (!mapRef.current) return;
-    const center = mapRef.current.getCenter();
-    // @ts-ignore
-    google.maps.event.trigger(mapRef.current, "resize");
-    if (center) mapRef.current.setCenter(center);
-  }, [isLarge]);
-
+  // ----- 5.5 Rendu -----
   if (loadError) return <div>Erreur de chargement Google Maps</div>;
   if (!isLoaded) return <div>Chargement…</div>;
 
@@ -523,8 +559,7 @@ export default function MapWithStreetView() {
 
       {/* Mini-carte */}
       <div
-        className={`overlay-map panel ${isLarge ? "xlarge" : isHover ? "large" : "small"
-          }`}
+        className={`overlay-map panel ${isLarge ? "xlarge" : isHover ? "large" : "small"}`}
         onMouseEnter={() => setIsHover(true)}
         onMouseLeave={() => setIsHover(false)}
       >
@@ -566,14 +601,13 @@ export default function MapWithStreetView() {
         <div ref={mapDivRef} className="fill" />
       </div>
 
-      {/* Overlay Résultat (fond uni sombre déjà configuré en CSS) */}
+      {/* Overlay Résultat */}
       {showResult && result && (
         <div className="result-overlay">
           <div className="result-card panel">
             <div className="result-header">
               <div className="badge">
-                Distance : <b>{(result.km * 1000).toFixed(0)} m</b> (
-                {result.km.toFixed(2)} km)
+                Distance : <b>{(result.km * 1000).toFixed(0)} m</b> ({result.km.toFixed(2)} km)
               </div>
               <div className="badge">
                 Score : <b>{result.score}</b> / 5000
@@ -595,5 +629,4 @@ export default function MapWithStreetView() {
       )}
     </div>
   );
-
 }
