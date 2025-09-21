@@ -9,6 +9,9 @@ const FR_BOUNDS = { latMin: 41.3, latMax: 51.1, lngMin: -5.1, lngMax: 9.6 };
 const SHOW_REAL_MARKER = false;
 const mapStyle: google.maps.MapTypeStyle[] = [];
 
+// 🔑 ton Map ID (récupéré dans Google Cloud)
+const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string;
+
 function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
   const urban = Math.random() < 0.85;
   if (urban) {
@@ -89,24 +92,19 @@ async function findFrenchPanorama(
 }
 
 export default function MapWithStreetView() {
-  // Street View refs
   const panoDivRef = useRef<HTMLDivElement | null>(null);
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
   const realMarkerRef = useRef<google.maps.Marker | null>(null);
   const lineRef = useRef<google.maps.Polyline | null>(null);
 
-  // Reset Street View
   const initialPanoPosRef = useRef<google.maps.LatLng | null>(null);
   const initialPovRef = useRef<google.maps.StreetViewPov | null>(null);
 
-  // MiniMap ref
   const miniMapRef = useRef<MiniMapHandle | null>(null);
 
-  // Réutilisation des services
   const svRef = useRef<google.maps.StreetViewService | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
-  // State
   const [loading, setLoading] = useState(true);
   const [isLarge, setIsLarge] = useState(false);
   const [validated, setValidated] = useState(false);
@@ -114,35 +112,31 @@ export default function MapWithStreetView() {
   const [showResult, setShowResult] = useState(false);
   const [result, setResult] = useState<{ km: number; score: number } | null>(null);
 
-  // positions figées pour l’overlay
   const [lastReal, setLastReal] = useState<google.maps.LatLngLiteral | null>(null);
   const [lastGuess, setLastGuess] = useState<google.maps.LatLngLiteral | null>(null);
 
-  // erreur panorama
   const [panoError, setPanoError] = useState<string | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string,
     id: "gmaps-sdk",
+    libraries: ["marker"], // ⚡ requis pour AdvancedMarkerElement
   });
 
-  // sync ref <- state
   useEffect(() => {
     validatedRef.current = validated;
   }, [validated]);
 
-  // première manche
   useEffect(() => {
     if (!isLoaded || !panoDivRef.current) return;
     startNewRound();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded]);
 
-  // --- handlers ---
   async function startNewRound() {
     if (!isLoaded || !panoDivRef.current) return;
 
-    setPanoError(null); // reset erreur
+    setPanoError(null);
     setLoading(true);
     setValidated(false);
     setShowResult(false);
@@ -150,19 +144,16 @@ export default function MapWithStreetView() {
     setLastReal(null);
     setLastGuess(null);
 
-    // Nettoie ancienne ligne & guess
     lineRef.current?.setMap(null);
     lineRef.current = null;
     miniMapRef.current?.clearGuess();
 
-    // Reset mini-carte
     const map = miniMapRef.current?.getMap();
     if (map) {
       map.setZoom(5);
       map.setCenter(new google.maps.LatLng(46.6, 2.2));
     }
 
-    // services (réutilisés)
     if (!svRef.current) svRef.current = new google.maps.StreetViewService();
     if (!geocoderRef.current) geocoderRef.current = new google.maps.Geocoder();
 
@@ -231,11 +222,9 @@ export default function MapWithStreetView() {
     setResult({ km, score });
     setValidated(true);
 
-    // fige pour l’overlay
     setLastReal(a);
     setLastGuess(b);
 
-    // Trace la ligne sur la mini-carte
     lineRef.current?.setMap(null);
     lineRef.current = new google.maps.Polyline({
       path: [realPos, guessPos],
@@ -258,7 +247,6 @@ export default function MapWithStreetView() {
 
   return (
     <div className="stage">
-      {/* Street View plein écran */}
       <div className="pano-fill">
         <div
           ref={panoDivRef}
@@ -282,7 +270,6 @@ export default function MapWithStreetView() {
         )}
       </div>
 
-      {/* Mini-carte */}
       <MiniMap
         ref={miniMapRef}
         isLoaded={isLoaded}
@@ -293,9 +280,9 @@ export default function MapWithStreetView() {
         onValidate={onValidate}
         onResetToStart={resetToStart}
         mapStyle={mapStyle}
+        mapId={MAP_ID} // 🔑 on passe le Map ID ici
       />
 
-      {/* Overlay Résultat */}
       {showResult && result && lastReal && lastGuess && (
         <ResultOverlay
           real={lastReal}
@@ -308,7 +295,6 @@ export default function MapWithStreetView() {
         />
       )}
 
-      {/* Panneau "Réessayer" si aucun panorama */}
       {panoError && (
         <div
           style={{

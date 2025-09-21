@@ -16,14 +16,12 @@ type Props = {
   isLoaded: boolean;
   isLarge: boolean;
   onToggleSize: () => void;
-
   loading: boolean;
   validated: boolean;
-
   onValidate: () => void;
   onResetToStart: () => void;
-
   mapStyle?: google.maps.MapTypeStyle[];
+  mapId?: string; // 🔑 on reçoit le Map ID
 };
 
 const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
@@ -36,18 +34,19 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
     onValidate,
     onResetToStart,
     mapStyle = [],
+    mapId,
   },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const guessMarkerRef = useRef<google.maps.Marker | null>(null);
+  const guessMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(
+    null
+  );
 
-  // Gestion fine des listeners
   const listenersRef = useRef<google.maps.MapsEventListener[]>([]);
   const clickListenerAttachedRef = useRef(false);
 
-  // 🔑 ref toujours à jour pour l’état "validated"
   const validatedRef = useRef(validated);
   useEffect(() => {
     validatedRef.current = validated;
@@ -57,14 +56,21 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
 
   useImperativeHandle(ref, () => ({
     getMap: () => mapRef.current,
-    getGuessLatLng: () => guessMarkerRef.current?.getPosition() ?? null,
+    getGuessLatLng: () => {
+      const pos = guessMarkerRef.current?.position;
+      if (!pos) return null;
+      return pos instanceof google.maps.LatLng
+        ? pos
+        : new google.maps.LatLng(pos);
+    },
     clearGuess: () => {
-      guessMarkerRef.current?.setMap(null);
-      guessMarkerRef.current = null;
+      if (guessMarkerRef.current) {
+        guessMarkerRef.current.map = null;
+        guessMarkerRef.current = null;
+      }
     },
   }));
 
-  // 1) Créer la carte si besoin (une fois)
   useEffect(() => {
     if (!isLoaded || !containerRef.current) return;
     if (mapRef.current) return;
@@ -81,10 +87,10 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
       clickableIcons: false,
       disableDoubleClickZoom: true,
       styles: mapStyle,
+      mapId, // 🔑 Map ID obligatoire pour AdvancedMarkerElement
     });
-  }, [isLoaded, mapStyle]);
+  }, [isLoaded, mapStyle, mapId]);
 
-  // 2) Attacher le listener de clic si la map existe et si pas encore attaché
   useEffect(() => {
     if (!mapRef.current) return;
     if (clickListenerAttachedRef.current) return;
@@ -93,19 +99,23 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
       "click",
       (e: google.maps.MapMouseEvent) => {
         if (!e.latLng || !mapRef.current) return;
-        // lire l’état courant via la ref pour éviter le "stale closure"
         if (validatedRef.current) return;
 
         if (!guessMarkerRef.current) {
-          guessMarkerRef.current = new google.maps.Marker({
-            position: e.latLng,
+          const pin = new google.maps.marker.PinElement({
+            background: "#4285F4",
+            glyphColor: "#ffffff",
+          });
+
+          guessMarkerRef.current = new google.maps.marker.AdvancedMarkerElement({
             map: mapRef.current,
-            draggable: true,
+            position: e.latLng,
             title: "Votre supposition",
-            icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+            gmpDraggable: true, // ✅ propriété correcte
+            content: pin.element,
           });
         } else {
-          guessMarkerRef.current.setPosition(e.latLng);
+          guessMarkerRef.current.position = e.latLng;
         }
       }
     );
@@ -114,7 +124,6 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
     clickListenerAttachedRef.current = true;
   }, [mapRef.current]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cleanup listeners à l’unmount
   useEffect(() => {
     return () => {
       listenersRef.current.forEach((l) => l.remove());
@@ -123,7 +132,6 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
     };
   }, []);
 
-  // Resize quand la taille change
   useEffect(() => {
     if (!mapRef.current) return;
     const center = mapRef.current.getCenter();
