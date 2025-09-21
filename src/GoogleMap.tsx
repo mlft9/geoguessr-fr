@@ -3,28 +3,12 @@ import { useJsApiLoader } from "@react-google-maps/api";
 import ResultOverlay from "./components/ResultOverlay";
 import MiniMap, { type MiniMapHandle } from "./components/MiniMap";
 import { CITY_SEEDS } from "./data/cities";
-import { haversineKm, scoreFromKm } from "./utils/geo"; // ajuste le chemin si besoin
+import { haversineKm, scoreFromKm } from "./utils/geo";
 
-
-// ========================================================
-// 2) Constantes & configuration
-// ========================================================
 const FR_BOUNDS = { latMin: 41.3, latMax: 51.1, lngMin: -5.1, lngMax: 9.6 };
-
-// Afficher le vrai marqueur (rouge) pendant la manche ?
 const SHOW_REAL_MARKER = false;
-
-// Style pour masquer les POI (ici vide => POI visibles)
 const mapStyle: google.maps.MapTypeStyle[] = [];
 
-// ========================================================
-// 4) Utilitaires (purs, sans dépendances React)
-// ========================================================
-/** Retourne une coordonnée biaisée :
- *  - 85% autour d'une ville/bourg (rayon ≤ ~4 km)
- *  - 15% dans toute la France
- * + un rayon Street View adapté.
- */
 function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
   const urban = Math.random() < 0.85;
   if (urban) {
@@ -34,7 +18,10 @@ function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
     const r = Math.random() * maxKm;
     const dLat = r / 111;
     const dLng = r / (111 * Math.cos((center.lat * Math.PI) / 180));
-    const seed = { lat: center.lat + dLat * Math.sin(a), lng: center.lng + dLng * Math.cos(a) };
+    const seed = {
+      lat: center.lat + dLat * Math.sin(a),
+      lng: center.lng + dLng * Math.cos(a),
+    };
     return { seed, radius: 800 };
   }
   const seed = {
@@ -44,7 +31,10 @@ function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
   return { seed, radius: 3000 };
 }
 
-function getCountryCode(geocoder: google.maps.Geocoder, latLng: google.maps.LatLng): Promise<string | null> {
+function getCountryCode(
+  geocoder: google.maps.Geocoder,
+  latLng: google.maps.LatLng
+): Promise<string | null> {
   return new Promise((resolve) => {
     geocoder.geocode({ location: latLng }, (results, status) => {
       if (status === google.maps.GeocoderStatus.OK && results) {
@@ -69,26 +59,28 @@ async function findFrenchPanorama(
 ): Promise<google.maps.StreetViewLocation | null> {
   for (let i = 0; i < maxAttempts; i++) {
     const { seed, radius } = weightedSeed();
-    const location = await new Promise<google.maps.StreetViewLocation | null>((resolve) => {
-      sv.getPanorama(
-        {
-          location: seed,
-          radius,
-          preference: google.maps.StreetViewPreference.NEAREST,
-          source: google.maps.StreetViewSource.OUTDOOR,
-        },
-        (data, status) => {
-          const hasLinks = (data?.links?.length ?? 0) > 0;
-          if (status === google.maps.StreetViewStatus.OK && data?.location && hasLinks) {
-            resolve(data.location);
-          } else {
-            resolve(null);
+    const location = await new Promise<google.maps.StreetViewLocation | null>(
+      (resolve) => {
+        sv.getPanorama(
+          {
+            location: seed,
+            radius,
+            preference: google.maps.StreetViewPreference.NEAREST,
+            source: google.maps.StreetViewSource.OUTDOOR,
+          },
+          (data, status) => {
+            const hasLinks = (data?.links?.length ?? 0) > 0;
+            if (status === google.maps.StreetViewStatus.OK && data?.location && hasLinks) {
+              resolve(data.location);
+            } else {
+              resolve(null);
+            }
           }
-        }
-      );
-    });
+        );
+      }
+    );
 
-    if (location?.latLng) {
+  if (location?.latLng) {
       const cc = await getCountryCode(geocoder, location.latLng);
       if (cc === "FR") return location;
     }
@@ -107,8 +99,12 @@ export default function MapWithStreetView() {
   const initialPanoPosRef = useRef<google.maps.LatLng | null>(null);
   const initialPovRef = useRef<google.maps.StreetViewPov | null>(null);
 
-  // MiniMap ref (accès à la map + guess)
+  // MiniMap ref
   const miniMapRef = useRef<MiniMapHandle | null>(null);
+
+  // Réutilisation des services
+  const svRef = useRef<google.maps.StreetViewService | null>(null);
+  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
   // State
   const [loading, setLoading] = useState(true);
@@ -150,7 +146,7 @@ export default function MapWithStreetView() {
     setLastReal(null);
     setLastGuess(null);
 
-    // Nettoie l’ancienne ligne et la supposition
+    // Nettoie ancienne ligne & guess
     lineRef.current?.setMap(null);
     lineRef.current = null;
     miniMapRef.current?.clearGuess();
@@ -162,11 +158,11 @@ export default function MapWithStreetView() {
       map.setCenter(new google.maps.LatLng(46.6, 2.2));
     }
 
-    // Choisir un nouveau pano FR
-    const sv = new google.maps.StreetViewService();
-    const geocoder = new google.maps.Geocoder();
+    // services (réutilisés)
+    if (!svRef.current) svRef.current = new google.maps.StreetViewService();
+    if (!geocoderRef.current) geocoderRef.current = new google.maps.Geocoder();
 
-    const loc = await findFrenchPanorama(sv, geocoder);
+    const loc = await findFrenchPanorama(svRef.current, geocoderRef.current);
     const chosen = loc?.latLng;
 
     if (!chosen) {
@@ -196,14 +192,13 @@ export default function MapWithStreetView() {
     if (!realMarkerRef.current) {
       realMarkerRef.current = new google.maps.Marker({
         position: chosen,
-        map: SHOW_REAL_MARKER ? miniMapRef.current?.getMap() ?? null : null,
+        map: SHOW_REAL_MARKER ? map ?? null : null,
         title: "Vraie position",
         icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
       });
     } else {
       realMarkerRef.current.setPosition(chosen);
-      // s’assurer que l’affichage suit le flag
-      realMarkerRef.current.setMap(SHOW_REAL_MARKER ? miniMapRef.current?.getMap() ?? null : null);
+      realMarkerRef.current.setMap(SHOW_REAL_MARKER ? map ?? null : null);
     }
 
     setLoading(false);
@@ -283,7 +278,7 @@ export default function MapWithStreetView() {
         )}
       </div>
 
-      {/* Mini-carte (extrait) */}
+      {/* Mini-carte */}
       <MiniMap
         ref={miniMapRef}
         isLoaded={isLoaded}

@@ -1,9 +1,7 @@
 // src/data/cities.ts
 export type LatLng = { lat: number; lng: number };
 
-/** Graines "urbaines" (centres villes / bourgs) — échantillon couvrant la France métropolitaine */
 export const CITY_SEEDS: LatLng[] = [
-  // grandes villes
   { lat: 48.8566, lng: 2.3522 }, // Paris
   { lat: 43.2965, lng: 5.3698 }, // Marseille
   { lat: 45.7640, lng: 4.8357 }, // Lyon
@@ -21,9 +19,7 @@ export const CITY_SEEDS: LatLng[] = [
   { lat: 49.4431, lng: 1.0993 }, // Rouen
   { lat: 48.6894, lng: 6.1844 }, // Nancy
   { lat: 49.1193, lng: 6.1757 }, // Metz
-  { lat: 48.8667, lng: 2.3333 }, // Paris-centre (doublon volontaire)
-
-  // villes moyennes & littoral/est/ouest
+  { lat: 48.8667, lng: 2.3333 }, // Paris-centre
   { lat: 46.5802, lng: 0.3404 }, // Poitiers
   { lat: 46.2044, lng: 5.2258 }, // Bourg-en-Bresse
   { lat: 45.7772, lng: 3.0870 }, // Clermont-Ferrand
@@ -49,16 +45,12 @@ export const CITY_SEEDS: LatLng[] = [
   { lat: 47.2380, lng: 6.0251 },  // Besançon
   { lat: 48.0790, lng: 7.3585 },  // Colmar
   { lat: 47.9022, lng: 7.2468 },  // Mulhouse
-
-  // Corse / Alpes / campagnes pour villages
   { lat: 41.9264, lng: 8.7369 },  // Ajaccio
   { lat: 42.7028, lng: 9.4500 },  // Bastia
   { lat: 44.5592, lng: 6.4953 },  // Barcelonnette
   { lat: 44.0930, lng: 6.2350 },  // Castellane
   { lat: 45.2920, lng: 6.5830 },  // Modane
   { lat: 45.9237, lng: 6.8694 },  // Chamonix
-
-  // ajouts diversité
   { lat: 44.1060, lng: 4.0839 },  // Alès
   { lat: 43.6766, lng: 4.6286 },  // Arles
   { lat: 46.6714, lng: -1.4264 }, // La Roche-sur-Yon
@@ -86,8 +78,6 @@ export const CITY_SEEDS: LatLng[] = [
   { lat: 44.5200, lng: 3.5000 },  // Mende
   { lat: 44.0136, lng: 1.3550 },  // Moissac
   { lat: 43.9330, lng: 2.1480 },  // Albi
-
-  // nouveaux ajouts
   { lat: 48.6833, lng: 6.1667 },  // Toul
   { lat: 48.8333, lng: 2.1333 },  // Versailles
   { lat: 48.5833, lng: 2.6667 },  // Melun

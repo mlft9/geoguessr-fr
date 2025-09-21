@@ -73,6 +73,8 @@ export default function ResultOverlay({
 
     return () => {
       resultLineRef.current?.setMap(null);
+      resultRealRef.current?.setMap(null);
+      resultGuessRef.current?.setMap(null);
       resultLineRef.current = null;
       resultRealRef.current = null;
       resultGuessRef.current = null;

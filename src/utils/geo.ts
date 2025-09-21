@@ -1,8 +1,6 @@
-// src/utils/geo.ts
-
 export type LatLngLiteral = { lat: number; lng: number };
 
-/** Distance haversine en km entre deux LatLng */
+/** Distance  en km entre deux points */
 export function haversineKm(a: LatLngLiteral, b: LatLngLiteral) {
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -17,7 +15,7 @@ export function haversineKm(a: LatLngLiteral, b: LatLngLiteral) {
 
 /** Score FR (0–5000) avec décroissance exponentielle */
 export function scoreFromKm(km: number) {
-  const scaleKm = 150; // ajusté pour la France
+  const scaleKm = 150;
   const s = Math.round(5000 * Math.exp(-km / scaleKm));
   return Math.max(0, Math.min(5000, s));
 }

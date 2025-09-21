@@ -1,4 +1,3 @@
-// src/components/MiniMap.tsx
 import {
   useEffect,
   useRef,
@@ -44,6 +43,16 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
   const mapRef = useRef<google.maps.Map | null>(null);
   const guessMarkerRef = useRef<google.maps.Marker | null>(null);
 
+  // Gestion fine des listeners
+  const listenersRef = useRef<google.maps.MapsEventListener[]>([]);
+  const clickListenerAttachedRef = useRef(false);
+
+  // 🔑 ref toujours à jour pour l’état "validated"
+  const validatedRef = useRef(validated);
+  useEffect(() => {
+    validatedRef.current = validated;
+  }, [validated]);
+
   const [isHover, setIsHover] = useState(false);
 
   useImperativeHandle(ref, () => ({
@@ -55,9 +64,10 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
     },
   }));
 
-  // Init carte
+  // 1) Créer la carte si besoin (une fois)
   useEffect(() => {
-    if (!isLoaded || !containerRef.current || mapRef.current) return;
+    if (!isLoaded || !containerRef.current) return;
+    if (mapRef.current) return;
 
     mapRef.current = new google.maps.Map(containerRef.current, {
       center: { lat: 46.6, lng: 2.2 },
@@ -72,24 +82,46 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
       disableDoubleClickZoom: true,
       styles: mapStyle,
     });
+  }, [isLoaded, mapStyle]);
 
-    // Click -> poser / déplacer la supposition
-    mapRef.current.addListener("click", (e: google.maps.MapMouseEvent) => {
-      if (!e.latLng || !mapRef.current) return;
-      if (validated) return; // si déjà validé, on ignore les nouveaux clics
-      if (!guessMarkerRef.current) {
-        guessMarkerRef.current = new google.maps.Marker({
-          position: e.latLng,
-          map: mapRef.current,
-          draggable: true,
-          title: "Votre supposition",
-          icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-        });
-      } else {
-        guessMarkerRef.current.setPosition(e.latLng);
+  // 2) Attacher le listener de clic si la map existe et si pas encore attaché
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (clickListenerAttachedRef.current) return;
+
+    const clickListener = mapRef.current.addListener(
+      "click",
+      (e: google.maps.MapMouseEvent) => {
+        if (!e.latLng || !mapRef.current) return;
+        // lire l’état courant via la ref pour éviter le "stale closure"
+        if (validatedRef.current) return;
+
+        if (!guessMarkerRef.current) {
+          guessMarkerRef.current = new google.maps.Marker({
+            position: e.latLng,
+            map: mapRef.current,
+            draggable: true,
+            title: "Votre supposition",
+            icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+          });
+        } else {
+          guessMarkerRef.current.setPosition(e.latLng);
+        }
       }
-    });
-  }, [isLoaded, mapStyle, validated]);
+    );
+
+    listenersRef.current.push(clickListener);
+    clickListenerAttachedRef.current = true;
+  }, [mapRef.current]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup listeners à l’unmount
+  useEffect(() => {
+    return () => {
+      listenersRef.current.forEach((l) => l.remove());
+      listenersRef.current = [];
+      clickListenerAttachedRef.current = false;
+    };
+  }, []);
 
   // Resize quand la taille change
   useEffect(() => {
@@ -102,7 +134,9 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
 
   return (
     <div
-      className={`overlay-map panel ${isLarge ? "xlarge" : isHover ? "large" : "small"}`}
+      className={`overlay-map panel ${
+        isLarge ? "xlarge" : isHover ? "large" : "small"
+      }`}
       onMouseEnter={() => setIsHover(true)}
       onMouseLeave={() => setIsHover(false)}
     >
