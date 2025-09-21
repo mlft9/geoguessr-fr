@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useJsApiLoader } from "@react-google-maps/api";
 import ResultOverlay from "./components/ResultOverlay";
 import MiniMap, { type MiniMapHandle } from "./components/MiniMap";
-import { CITY_SEEDS } from "./data/cities"; // ajuste le chemin si besoin
+import { CITY_SEEDS } from "./data/cities";
+import { haversineKm, scoreFromKm } from "./utils/geo"; // ajuste le chemin si besoin
 
 
 // ========================================================
@@ -93,24 +94,6 @@ async function findFrenchPanorama(
     }
   }
   return null;
-}
-
-function haversineKm(a: google.maps.LatLngLiteral, b: google.maps.LatLngLiteral) {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const la1 = (a.lat * Math.PI) / 180;
-  const la2 = (b.lat * Math.PI) / 180;
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-  const h = sinDLat * sinDLat + Math.cos(la1) * Math.cos(la2) * sinDLng * sinDLng;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-}
-
-function scoreFromKm(km: number) {
-  const scaleKm = 150;
-  const s = Math.round(5000 * Math.exp(-km / scaleKm));
-  return Math.max(0, Math.min(5000, s));
 }
 
 export default function MapWithStreetView() {
