@@ -4,9 +4,8 @@ import ResultOverlay from "./components/ResultOverlay";
 import MiniMap, { type MiniMapHandle } from "./components/MiniMap";
 import { CITY_SEEDS } from "./data/cities";
 import { haversineKm, scoreFromKm } from "./utils/geo";
+import { GAME_CONFIG } from "./config";
 
-const FR_BOUNDS = { latMin: 41.3, latMax: 51.1, lngMin: -5.1, lngMax: 9.6 };
-const SHOW_REAL_MARKER = false;
 const mapStyle: google.maps.MapTypeStyle[] = [];
 const LIBRARIES: ("marker")[] = ["marker"];
 
@@ -14,10 +13,11 @@ const LIBRARIES: ("marker")[] = ["marker"];
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string;
 
 function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
-  const urban = Math.random() < 0.85;
+  const urban = Math.random() < GAME_CONFIG.urbanProbability;
+
   if (urban) {
     const center = CITY_SEEDS[Math.floor(Math.random() * CITY_SEEDS.length)];
-    const maxKm = 4;
+    const maxKm = GAME_CONFIG.urbanRadiusKm; // distance de spawn autour de la ville
     const a = Math.random() * 2 * Math.PI;
     const r = Math.random() * maxKm;
     const dLat = r / 111;
@@ -26,13 +26,17 @@ function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
       lat: center.lat + dLat * Math.sin(a),
       lng: center.lng + dLng * Math.cos(a),
     };
+    // rayon de recherche Street View en zone urbaine (conservé à 800 m)
     return { seed, radius: 800 };
   }
+
+  const { frBounds } = GAME_CONFIG;
   const seed = {
-    lat: FR_BOUNDS.latMin + (FR_BOUNDS.latMax - FR_BOUNDS.latMin) * Math.random(),
-    lng: FR_BOUNDS.lngMin + (FR_BOUNDS.lngMax - FR_BOUNDS.lngMin) * Math.random(),
+    lat: frBounds.latMin + (frBounds.latMax - frBounds.latMin) * Math.random(),
+    lng: frBounds.lngMin + (frBounds.lngMax - frBounds.lngMin) * Math.random(),
   };
-  return { seed, radius: 3000 };
+  // rayon de recherche Street View en zone rurale (configurable)
+  return { seed, radius: GAME_CONFIG.ruralRadiusM };
 }
 
 function getCountryCode(
@@ -130,12 +134,10 @@ export default function MapWithStreetView() {
 
   const [panoError, setPanoError] = useState<string | null>(null);
 
-
-
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string,
     id: "gmaps-sdk",
-    libraries: LIBRARIES, // ✅ tableau constant
+    libraries: LIBRARIES,
   });
 
   useEffect(() => {
@@ -211,11 +213,11 @@ export default function MapWithStreetView() {
         position: chosen,
         title: "Vraie position",
         content: redPin.element,
-        map: SHOW_REAL_MARKER ? map ?? null : null, // visible seulement si flag
+        map: GAME_CONFIG.showRealMarker ? map ?? null : null, // visible seulement si flag
       });
     } else {
       realMarkerRef.current.position = chosen;
-      realMarkerRef.current.map = SHOW_REAL_MARKER ? map ?? null : null;
+      realMarkerRef.current.map = GAME_CONFIG.showRealMarker ? map ?? null : null;
     }
 
     setLoading(false);

@@ -1,5 +1,6 @@
 // src/components/ResultOverlay.tsx
 import { useEffect, useRef } from "react";
+import { GAME_CONFIG } from "../config"; // 👈 nouvel import
 
 type LatLngLiteral = google.maps.LatLngLiteral;
 
@@ -54,11 +55,11 @@ export default function ResultOverlay({
 
     // Pins rouge & bleu via PinElement
     const redPin = new google.maps.marker.PinElement({
-      background: "#EA4335", // rouge Google
+      background: "#EA4335",
       glyphColor: "#ffffff",
     });
     const bluePin = new google.maps.marker.PinElement({
-      background: "#4285F4", // bleu Google
+      background: "#4285F4",
       glyphColor: "#ffffff",
     });
 
@@ -112,7 +113,7 @@ export default function ResultOverlay({
             Distance : <b>{(km * 1000).toFixed(0)} m</b> ({km.toFixed(2)} km)
           </div>
           <div className="badge">
-            Score : <b>{score}</b> / 5000
+            Score : <b>{score}</b> / {GAME_CONFIG.maxScore}
           </div>
         </div>
         <div className="result-map">

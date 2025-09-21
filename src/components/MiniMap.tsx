@@ -5,6 +5,7 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
+import { GAME_CONFIG } from "../config"; // 👈 nouvel import
 
 export type MiniMapHandle = {
   getMap: () => google.maps.Map | null;
@@ -21,7 +22,7 @@ type Props = {
   onValidate: () => void;
   onResetToStart: () => void;
   mapStyle?: google.maps.MapTypeStyle[];
-  mapId?: string; // 🔑 on reçoit le Map ID
+  mapId?: string;
 };
 
 const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
@@ -76,8 +77,8 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
     if (mapRef.current) return;
 
     mapRef.current = new google.maps.Map(containerRef.current, {
-      center: { lat: 46.6, lng: 2.2 },
-      zoom: 5,
+      center: GAME_CONFIG.ui.miniMapInitialCenter,
+      zoom: GAME_CONFIG.ui.miniMapInitialZoom,
       streetViewControl: false,
       mapTypeControl: false,
       fullscreenControl: false,
@@ -103,7 +104,7 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
 
         if (!guessMarkerRef.current) {
           const pin = new google.maps.marker.PinElement({
-            background: "#4285F4",
+            background: GAME_CONFIG.pins.guessColor,
             glyphColor: "#ffffff",
           });
 
@@ -111,7 +112,7 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
             map: mapRef.current,
             position: e.latLng,
             title: "Votre supposition",
-            gmpDraggable: true, // ✅ propriété correcte
+            gmpDraggable: GAME_CONFIG.ui.guessDraggable, // 👈 option config
             content: pin.element,
           });
         } else {
@@ -143,7 +144,11 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
   return (
     <div
       className={`overlay-map panel ${
-        isLarge ? "xlarge" : isHover ? "large" : "small"
+        isLarge
+          ? "xlarge"
+          : GAME_CONFIG.ui.hoverExpandMiniMap && isHover
+          ? "large"
+          : "small"
       }`}
       onMouseEnter={() => setIsHover(true)}
       onMouseLeave={() => setIsHover(false)}
