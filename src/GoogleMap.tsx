@@ -8,8 +8,9 @@ import { haversineKm, scoreFromKm } from "./utils/geo";
 const FR_BOUNDS = { latMin: 41.3, latMax: 51.1, lngMin: -5.1, lngMax: 9.6 };
 const SHOW_REAL_MARKER = false;
 const mapStyle: google.maps.MapTypeStyle[] = [];
+const LIBRARIES: ("marker")[] = ["marker"];
 
-// 🔑 ton Map ID (récupéré dans Google Cloud)
+// 🔑 Map ID (vector) pour activer AdvancedMarkerElement
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string;
 
 function weightedSeed(): { seed: google.maps.LatLngLiteral; radius: number } {
@@ -91,20 +92,32 @@ async function findFrenchPanorama(
   return null;
 }
 
+// Helper pour lire une position d’AdvancedMarkerElement en LatLng
+function toLatLng(pos: google.maps.LatLng | google.maps.LatLngLiteral) {
+  return pos instanceof google.maps.LatLng ? pos : new google.maps.LatLng(pos);
+}
+
 export default function MapWithStreetView() {
+  // Street View refs
   const panoDivRef = useRef<HTMLDivElement | null>(null);
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
-  const realMarkerRef = useRef<google.maps.Marker | null>(null);
+
+  // 🔴 vrai marqueur -> AdvancedMarkerElement
+  const realMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
   const lineRef = useRef<google.maps.Polyline | null>(null);
 
+  // Reset Street View
   const initialPanoPosRef = useRef<google.maps.LatLng | null>(null);
   const initialPovRef = useRef<google.maps.StreetViewPov | null>(null);
 
+  // MiniMap ref
   const miniMapRef = useRef<MiniMapHandle | null>(null);
 
+  // Réutilisation des services
   const svRef = useRef<google.maps.StreetViewService | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
+  // State
   const [loading, setLoading] = useState(true);
   const [isLarge, setIsLarge] = useState(false);
   const [validated, setValidated] = useState(false);
@@ -117,10 +130,12 @@ export default function MapWithStreetView() {
 
   const [panoError, setPanoError] = useState<string | null>(null);
 
+
+
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string,
     id: "gmaps-sdk",
-    libraries: ["marker"], // ⚡ requis pour AdvancedMarkerElement
+    libraries: LIBRARIES, // ✅ tableau constant
   });
 
   useEffect(() => {
@@ -144,6 +159,7 @@ export default function MapWithStreetView() {
     setLastReal(null);
     setLastGuess(null);
 
+    // Nettoyage
     lineRef.current?.setMap(null);
     lineRef.current = null;
     miniMapRef.current?.clearGuess();
@@ -184,16 +200,22 @@ export default function MapWithStreetView() {
     initialPovRef.current = panoRef.current.getPov();
     panoRef.current.setZoom(1);
 
+    // 🔴 vrai marqueur avec AdvancedMarkerElement (pin rouge)
+    const redPin = new google.maps.marker.PinElement({
+      background: "#EA4335",
+      glyphColor: "#ffffff",
+    });
+
     if (!realMarkerRef.current) {
-      realMarkerRef.current = new google.maps.Marker({
+      realMarkerRef.current = new google.maps.marker.AdvancedMarkerElement({
         position: chosen,
-        map: SHOW_REAL_MARKER ? map ?? null : null,
         title: "Vraie position",
-        icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+        content: redPin.element,
+        map: SHOW_REAL_MARKER ? map ?? null : null, // visible seulement si flag
       });
     } else {
-      realMarkerRef.current.setPosition(chosen);
-      realMarkerRef.current.setMap(SHOW_REAL_MARKER ? map ?? null : null);
+      realMarkerRef.current.position = chosen;
+      realMarkerRef.current.map = SHOW_REAL_MARKER ? map ?? null : null;
     }
 
     setLoading(false);
@@ -208,12 +230,15 @@ export default function MapWithStreetView() {
 
   function onValidate() {
     const map = miniMapRef.current?.getMap();
-    const realPos = realMarkerRef.current?.getPosition();
+    const realPosAny = realMarkerRef.current?.position;
     const guessPos = miniMapRef.current?.getGuessLatLng();
-    if (!map || !realPos || !guessPos) {
+
+    if (!map || !realPosAny || !guessPos) {
       alert("Pose d'abord ta supposition (clic sur la mini-carte).");
       return;
     }
+
+    const realPos = toLatLng(realPosAny);
 
     const a = { lat: realPos.lat(), lng: realPos.lng() };
     const b = { lat: guessPos.lat(), lng: guessPos.lng() };
@@ -225,6 +250,7 @@ export default function MapWithStreetView() {
     setLastReal(a);
     setLastGuess(b);
 
+    // Trace la ligne sur la mini-carte
     lineRef.current?.setMap(null);
     lineRef.current = new google.maps.Polyline({
       path: [realPos, guessPos],
@@ -247,6 +273,7 @@ export default function MapWithStreetView() {
 
   return (
     <div className="stage">
+      {/* Street View plein écran */}
       <div className="pano-fill">
         <div
           ref={panoDivRef}
@@ -270,6 +297,7 @@ export default function MapWithStreetView() {
         )}
       </div>
 
+      {/* Mini-carte */}
       <MiniMap
         ref={miniMapRef}
         isLoaded={isLoaded}
@@ -280,9 +308,10 @@ export default function MapWithStreetView() {
         onValidate={onValidate}
         onResetToStart={resetToStart}
         mapStyle={mapStyle}
-        mapId={MAP_ID} // 🔑 on passe le Map ID ici
+        mapId={MAP_ID} // 🔑 Map ID pour AdvancedMarkers côté mini-carte
       />
 
+      {/* Overlay Résultat */}
       {showResult && result && lastReal && lastGuess && (
         <ResultOverlay
           real={lastReal}
@@ -292,9 +321,11 @@ export default function MapWithStreetView() {
           onClose={() => setShowResult(false)}
           onNext={startNewRound}
           mapStyle={mapStyle}
+          mapId={MAP_ID} // ✅ passer le Map ID aussi à l’overlay
         />
       )}
 
+      {/* Panneau "Réessayer" si aucun panorama */}
       {panoError && (
         <div
           style={{

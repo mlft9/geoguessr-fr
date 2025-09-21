@@ -86,7 +86,7 @@ const MiniMap = forwardRef<MiniMapHandle, Props>(function MiniMap(
       disableDefaultUI: true,
       clickableIcons: false,
       disableDoubleClickZoom: true,
-      styles: mapStyle,
+      // styles: mapStyle,
       mapId, // 🔑 Map ID obligatoire pour AdvancedMarkerElement
     });
   }, [isLoaded, mapStyle, mapId]);

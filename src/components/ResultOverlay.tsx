@@ -11,6 +11,8 @@ type Props = {
   onClose: () => void;
   onNext: () => void;
   mapStyle?: google.maps.MapTypeStyle[];
+  /** 🔑 Requis pour AdvancedMarkerElement (vector map) */
+  mapId?: string;
 };
 
 export default function ResultOverlay({
@@ -21,16 +23,20 @@ export default function ResultOverlay({
   onClose,
   onNext,
   mapStyle = [],
+  mapId,
 }: Props) {
   const resultMapDivRef = useRef<HTMLDivElement | null>(null);
   const resultMapRef = useRef<google.maps.Map | null>(null);
   const resultLineRef = useRef<google.maps.Polyline | null>(null);
-  const resultRealRef = useRef<google.maps.Marker | null>(null);
-  const resultGuessRef = useRef<google.maps.Marker | null>(null);
+
+  // 🔴🔵 AdvancedMarkers (au lieu de google.maps.Marker)
+  const resultRealRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const resultGuessRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
 
   useEffect(() => {
     if (!resultMapDivRef.current) return;
 
+    // Carte résultat (avec Map ID pour activer Advanced Markers)
     resultMapRef.current = new google.maps.Map(resultMapDivRef.current, {
       center: { lat: 46.6, lng: 2.2 },
       zoom: 5,
@@ -42,30 +48,45 @@ export default function ResultOverlay({
       disableDefaultUI: true,
       clickableIcons: false,
       disableDoubleClickZoom: true,
-      styles: mapStyle,
+      // styles: mapStyle,
+      mapId, // ✅ important pour AdvancedMarkerElement
     });
 
-    resultRealRef.current = new google.maps.Marker({
+    // Pins rouge & bleu via PinElement
+    const redPin = new google.maps.marker.PinElement({
+      background: "#EA4335", // rouge Google
+      glyphColor: "#ffffff",
+    });
+    const bluePin = new google.maps.marker.PinElement({
+      background: "#4285F4", // bleu Google
+      glyphColor: "#ffffff",
+    });
+
+    // Marqueurs avancés
+    resultRealRef.current = new google.maps.marker.AdvancedMarkerElement({
+      map: resultMapRef.current!,
       position: real,
-      map: resultMapRef.current,
-      icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
       title: "Vraie position",
+      content: redPin.element,
     });
-    resultGuessRef.current = new google.maps.Marker({
+    resultGuessRef.current = new google.maps.marker.AdvancedMarkerElement({
+      map: resultMapRef.current!,
       position: guess,
-      map: resultMapRef.current,
-      icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
       title: "Votre supposition",
+      content: bluePin.element,
     });
+
+    // Ligne entre les deux points
     resultLineRef.current = new google.maps.Polyline({
       path: [real, guess],
       geodesic: true,
       strokeColor: "#66a3ff",
       strokeOpacity: 0.9,
       strokeWeight: 3,
-      map: resultMapRef.current,
+      map: resultMapRef.current!,
     });
 
+    // Fit bounds
     const bounds = new google.maps.LatLngBounds();
     bounds.extend(real);
     bounds.extend(guess);
@@ -73,14 +94,15 @@ export default function ResultOverlay({
 
     return () => {
       resultLineRef.current?.setMap(null);
-      resultRealRef.current?.setMap(null);
-      resultGuessRef.current?.setMap(null);
+      if (resultRealRef.current) resultRealRef.current.map = null;
+      if (resultGuessRef.current) resultGuessRef.current.map = null;
+
       resultLineRef.current = null;
       resultRealRef.current = null;
       resultGuessRef.current = null;
       resultMapRef.current = null;
     };
-  }, [real, guess, mapStyle]);
+  }, [real, guess, mapStyle, mapId]);
 
   return (
     <div className="result-overlay">
